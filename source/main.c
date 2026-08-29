@@ -1,15 +1,32 @@
 #include <nds.h>
+#include <math.h>
 #include <stdio.h>
 
-#include "texture_bin.h"
+#include "world.h"
+#include "render_nds.h"
 
-static int blockTex;
+#define DEG2RAD 0.0174532925f
+#define MOVE_SPEED 0.10f   /* blocks/frame, ~6 blocks/sec at 60fps */
+#define TURN_SPEED 2.2f    /* degrees/frame */
+
+typedef struct {
+	float x, y, z;
+	float yaw, pitch;
+} Camera;
+
+static void cameraForward(const Camera *cam, float *fx, float *fy, float *fz)
+{
+	float yawR = cam->yaw * DEG2RAD;
+	float pitchR = cam->pitch * DEG2RAD;
+	*fx = sinf(yawR) * cosf(pitchR);
+	*fy = sinf(pitchR);
+	*fz = -cosf(yawR) * cosf(pitchR);
+}
 
 static void initGraphics(void)
 {
 	videoSetMode(MODE_0_3D);
 	videoSetModeSub(MODE_0_2D);
-	vramSetBankA(VRAM_A_TEXTURE);
 	vramSetBankC(VRAM_C_SUB_BG);
 
 	consoleDemoInit();
@@ -18,7 +35,7 @@ static void initGraphics(void)
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_ANTIALIAS);
 
-	glClearColor(6, 6, 12, 31);
+	glClearColor(10, 14, 20, 31);
 	glClearPolyID(63);
 	glClearDepth(GL_MAX_DEPTH);
 	glViewport(0, 0, 255, 191);
@@ -27,89 +44,73 @@ static void initGraphics(void)
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(70, 256.0 / 192.0, 0.1f, 40.0f);
+	gluPerspective(70, 256.0 / 192.0, 0.05f, 40.0f);
 
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
-	glGenTextures(1, &blockTex);
-	glBindTexture(0, blockTex);
-	glTexImage2D(0, 0, GL_RGB, TEXTURE_SIZE_16, TEXTURE_SIZE_16, 0,
-	             GL_TEXTURE_WRAP_S | GL_TEXTURE_WRAP_T, (u8 *)texture_bin);
-}
-
-static inline void quad(float shade,
-                         float x0, float y0, float z0,
-                         float x1, float y1, float z1,
-                         float x2, float y2, float z2,
-                         float x3, float y3, float z3)
-{
-	glColor3f(shade, shade, shade);
-	glTexCoord2f(0, 1); glVertex3f(x0, y0, z0);
-	glTexCoord2f(1, 1); glVertex3f(x1, y1, z1);
-	glTexCoord2f(1, 0); glVertex3f(x2, y2, z2);
-	glTexCoord2f(0, 0); glVertex3f(x3, y3, z3);
-}
-
-/* shades match vanilla MC's fixed per-face brightness (1.0/0.8/0.6/0.5)
- * -- cheap stand-in for real lighting, and it's what block meshing will
- * use anyway once chunks exist, so may as well bake it in now */
-static void drawBlockCube(void)
-{
-	glBindTexture(0, blockTex);
-	glBegin(GL_QUADS);
-
-	quad(1.0f, -0.5f, 0.5f, -0.5f,  0.5f, 0.5f, -0.5f,  0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f);   /* top */
-	quad(0.5f, -0.5f,-0.5f,  0.5f,  0.5f,-0.5f,  0.5f,  0.5f,-0.5f,-0.5f, -0.5f,-0.5f,-0.5f);   /* bottom */
-	quad(0.8f, -0.5f,-0.5f, -0.5f,  0.5f,-0.5f, -0.5f,  0.5f, 0.5f,-0.5f, -0.5f, 0.5f,-0.5f);   /* north */
-	quad(0.8f,  0.5f,-0.5f,  0.5f, -0.5f,-0.5f,  0.5f, -0.5f, 0.5f, 0.5f,  0.5f, 0.5f, 0.5f);   /* south */
-	quad(0.6f, -0.5f,-0.5f,  0.5f, -0.5f,-0.5f, -0.5f, -0.5f, 0.5f,-0.5f, -0.5f, 0.5f, 0.5f);   /* west */
-	quad(0.6f,  0.5f,-0.5f, -0.5f,  0.5f,-0.5f,  0.5f,  0.5f, 0.5f, 0.5f,  0.5f, 0.5f,-0.5f);   /* east */
-
-	glEnd();
+	renderInit();
 }
 
 int main(void)
 {
 	initGraphics();
 
-	float rotX = 0.0f, rotY = 0.0f;
+	World world;
+	worldInit(&world, 1337);
+
+	Camera cam = { 8.0f, 22.0f, 8.0f, 0.0f, -15.0f };
+	worldUpdate(&world, (int32_t)cam.x, (int32_t)cam.z);
+
 	int frame = 0;
+	int lastBuilt = 0;
 
 	while (pmMainLoop())
 	{
 		scanKeys();
-		touchPosition touch;
-		touchRead(&touch);
+		u16 held = keysHeld();
 
-		rotY += 1.0f;
-		rotX += 0.4f;
+		if (held & KEY_LEFT)  cam.yaw -= TURN_SPEED;
+		if (held & KEY_RIGHT) cam.yaw += TURN_SPEED;
+		if (held & KEY_UP)    cam.pitch += TURN_SPEED;
+		if (held & KEY_DOWN)  cam.pitch -= TURN_SPEED;
+		if (cam.pitch > 89.0f) cam.pitch = 89.0f;
+		if (cam.pitch < -89.0f) cam.pitch = -89.0f;
+
+		float fx, fy, fz;
+		cameraForward(&cam, &fx, &fy, &fz);
+		float rx = -fz, rz = fx; /* right = forward rotated -90 deg about Y */
+
+		if (held & KEY_A) { cam.x += fx * MOVE_SPEED; cam.y += fy * MOVE_SPEED; cam.z += fz * MOVE_SPEED; }
+		if (held & KEY_B) { cam.x -= fx * MOVE_SPEED; cam.y -= fy * MOVE_SPEED; cam.z -= fz * MOVE_SPEED; }
+		if (held & KEY_X) { cam.y += MOVE_SPEED; }
+		if (held & KEY_Y) { cam.y -= MOVE_SPEED; }
+		if (held & KEY_L) { cam.x -= rx * MOVE_SPEED; cam.z -= rz * MOVE_SPEED; }
+		if (held & KEY_R) { cam.x += rx * MOVE_SPEED; cam.z += rz * MOVE_SPEED; }
+
+		lastBuilt = worldUpdate(&world, (int32_t)cam.x, (int32_t)cam.z);
 
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
-		gluLookAt(0.0, 0.0, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-		glRotateX(rotX);
-		glRotateY(rotY);
+		gluLookAt(cam.x * BLOCK_UNIT, cam.y * BLOCK_UNIT, cam.z * BLOCK_UNIT,
+		          (cam.x + fx) * BLOCK_UNIT, (cam.y + fy) * BLOCK_UNIT, (cam.z + fz) * BLOCK_UNIT,
+		          0.0, 1.0, 0.0);
 
-		drawBlockCube();
+		renderWorld(&world);
 		glFlush(0);
 
 		if (frame % 15 == 0)
 		{
 			consoleClear();
-			iprintf("Minecraft-DS scaffold\n\n");
-			iprintf("frame  %d\n", frame);
-			iprintf("rotY   %d deg\n", (int)rotY % 360);
-			if (keysHeld() & KEY_TOUCH)
-				iprintf("touch  %d,%d\n", touch.px, touch.py);
-			else
-				iprintf("touch  --\n");
+			iprintf("Minecraft-DS  chunk streaming\n\n");
+			iprintf("pos    %d,%d,%d\n", (int)cam.x, (int)cam.y, (int)cam.z);
+			iprintf("yaw/pt %d/%d\n", (int)cam.yaw, (int)cam.pitch);
+			iprintf("chunk  %d,%d\n", world.centerCx, world.centerCz);
+			iprintf("built  %d last update\n", lastBuilt);
+			iprintf("\nD-pad look, A/B fwd/back\nX/Y up/down, L/R strafe\n");
 		}
 
 		swiWaitForVBlank();
 		frame++;
 
-		if (keysHeld() & KEY_START)
+		if (held & KEY_START)
 			break;
 	}
 
