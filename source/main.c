@@ -10,6 +10,7 @@
 #include "hud_layout.h"
 #include "hud_nds.h"
 #include "daynight.h"
+#include "mob.h"
 
 #define DEG2RAD 0.0174532925f
 #define TURN_SPEED 2.2f    /* degrees/frame */
@@ -67,6 +68,9 @@ int main(void)
 
 	DayNight dn;
 	dayNightInit(&dn);
+
+	MobWorld mobs;
+	mobWorldInit(&mobs, 2024);
 
 	while (pmMainLoop())
 	{
@@ -145,17 +149,24 @@ int main(void)
 		dayNightSkyColor(&dn, &skyR, &skyG, &skyB);
 		glClearColor(skyR, skyG, skyB, 31);
 
+		playerSurvivalStep(&pl, DT);
+		mobWorldTrySpawn(&mobs, &world, &dn, &pl, DT);
+		mobWorldStep(&mobs, &world, &pl, DT);
+
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		gluLookAt(eyeX * BLOCK_UNIT, eyeY * BLOCK_UNIT, eyeZ * BLOCK_UNIT,
 		          (eyeX + fx) * BLOCK_UNIT, (eyeY + fy) * BLOCK_UNIT, (eyeZ + fz) * BLOCK_UNIT,
 		          0.0, 1.0, 0.0);
 
-		renderWorld(&world, dayNightLightLevel(&dn));
+		float lightMul = dayNightLightLevel(&dn);
+		renderWorld(&world, lightMul);
+		renderMobs(&mobs, lightMul);
 		glFlush(0);
 
 		hudRender(&inv, &grid, craftMode, target.hit,
-		          target.hit ? worldGetBlock(&world, target.bx, target.by, target.bz) : BLOCK_AIR);
+		          target.hit ? worldGetBlock(&world, target.bx, target.by, target.bz) : BLOCK_AIR,
+		          pl.health, pl.hunger);
 
 		swiWaitForVBlank();
 

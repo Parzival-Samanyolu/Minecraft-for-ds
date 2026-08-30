@@ -27,8 +27,15 @@
 #define HUD_CRAFT_TOGGLE_X 228
 #define HUD_CRAFT_TOGGLE_Y 8
 
+/* non-interactive: just a display readout, not part of hudHitTest */
+#define HUD_HEALTH_BAR_X 8
+#define HUD_HEALTH_BAR_Y 34
+#define HUD_HUNGER_BAR_Y 46
+#define HUD_BAR_W 100
+#define HUD_BAR_H 8
+
 typedef struct {
-	int x, y;
+	int x, y, w, h;
 } HudRect;
 
 typedef enum {
@@ -49,6 +56,8 @@ HudRect hudSlotPosition(int slotIndex);
 HudRect hudCraftCellPosition(int cellIndex);
 HudRect hudCraftOutputPosition(void);
 HudRect hudCraftTogglePosition(void);
+HudRect hudHealthBarPosition(void);
+HudRect hudHungerBarPosition(void);
 
 HudHit hudHitTest(int px, int py);
 

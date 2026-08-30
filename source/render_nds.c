@@ -1,6 +1,7 @@
 #include <nds.h>
 #include "render_nds.h"
 #include "block.h"
+#include "mob.h"
 #include "texture_bin.h"
 
 #define TEX_TILE_BYTES (16 * 16 * 2)
@@ -85,5 +86,51 @@ void renderWorld(World *w, float lightMul)
 		}
 
 		glPopMatrix(1);
+	}
+}
+
+static void mobFace(float shade, float x0, float y0, float z0, float x1, float y1, float z1,
+                     float x2, float y2, float z2, float x3, float y3, float z3)
+{
+	glColor3f(shade, shade, shade);
+	glTexCoord2f(0, 1); glVertex3f(x0, y0, z0);
+	glTexCoord2f(1, 1); glVertex3f(x1, y1, z1);
+	glTexCoord2f(1, 0); glVertex3f(x2, y2, z2);
+	glTexCoord2f(0, 0); glVertex3f(x3, y3, z3);
+}
+
+/* mobs get a plain textured box instead of a proper model -- there's no
+ * skeletal/animated mesh pipeline here, and one box per mob is cheap
+ * enough not to worry about (at most MOB_MAX_COUNT of them) */
+static void drawMobBox(float cx, float cy, float cz, float halfWidth, float height,
+                        int texIndex, float lightMul)
+{
+	glBindTexture(0, s_texIds[texIndex]);
+	glPushMatrix();
+	glTranslatef32(floattof32(cx * BLOCK_UNIT), floattof32(cy * BLOCK_UNIT), floattof32(cz * BLOCK_UNIT));
+
+	float hw = halfWidth * BLOCK_UNIT;
+	float h = height * BLOCK_UNIT;
+
+	glBegin(GL_QUADS);
+	mobFace(1.0f * lightMul, -hw, h, -hw,  hw, h, -hw,  hw, h, hw,  -hw, h, hw);   /* top */
+	mobFace(0.5f * lightMul, -hw, 0, hw,   hw, 0, hw,   hw, 0, -hw, -hw, 0, -hw);  /* bottom */
+	mobFace(0.8f * lightMul, -hw, 0, -hw,  hw, 0, -hw,  hw, h, -hw, -hw, h, -hw);  /* north */
+	mobFace(0.8f * lightMul, hw, 0, hw,    -hw, 0, hw,  -hw, h, hw,  hw, h, hw);   /* south */
+	mobFace(0.6f * lightMul, -hw, 0, hw,   -hw, 0, -hw, -hw, h, -hw, -hw, h, hw);  /* west */
+	mobFace(0.6f * lightMul, hw, 0, -hw,   hw, 0, hw,    hw, h, hw,  hw, h, -hw);  /* east */
+	glEnd();
+
+	glPopMatrix(1);
+}
+
+void renderMobs(const MobWorld *mw, float lightMul)
+{
+	for (int i = 0; i < MOB_MAX_COUNT; i++) {
+		const Mob *m = &mw->mobs[i];
+		if (!m->active)
+			continue;
+		int tex = (m->kind == MOB_PASSIVE) ? TEX_MOB_PASSIVE : TEX_MOB_HOSTILE;
+		drawMobBox(m->x, m->y, m->z, MOB_HALF_WIDTH, MOB_HEIGHT, tex, lightMul);
 	}
 }

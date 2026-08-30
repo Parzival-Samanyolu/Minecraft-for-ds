@@ -6,7 +6,7 @@
 
 HudRect hudSlotPosition(int slotIndex)
 {
-	HudRect r;
+	HudRect r = { 0, 0, HUD_SLOT_SIZE, HUD_SLOT_SIZE };
 	if (slotIndex < INV_HOTBAR_SLOTS) {
 		r.x = ROW_X + slotIndex * HUD_SLOT_SIZE;
 		r.y = HOTBAR_Y;
@@ -23,7 +23,7 @@ HudRect hudSlotPosition(int slotIndex)
 
 HudRect hudCraftCellPosition(int cellIndex)
 {
-	HudRect r;
+	HudRect r = { 0, 0, HUD_SLOT_SIZE, HUD_SLOT_SIZE };
 	int row = cellIndex / HUD_CRAFT_COLS;
 	int col = cellIndex % HUD_CRAFT_COLS;
 	r.x = HUD_CRAFT_X + col * HUD_SLOT_SIZE;
@@ -33,19 +33,31 @@ HudRect hudCraftCellPosition(int cellIndex)
 
 HudRect hudCraftOutputPosition(void)
 {
-	HudRect r = { HUD_CRAFT_OUTPUT_X, HUD_CRAFT_OUTPUT_Y };
+	HudRect r = { HUD_CRAFT_OUTPUT_X, HUD_CRAFT_OUTPUT_Y, HUD_SLOT_SIZE, HUD_SLOT_SIZE };
 	return r;
 }
 
 HudRect hudCraftTogglePosition(void)
 {
-	HudRect r = { HUD_CRAFT_TOGGLE_X, HUD_CRAFT_TOGGLE_Y };
+	HudRect r = { HUD_CRAFT_TOGGLE_X, HUD_CRAFT_TOGGLE_Y, HUD_SLOT_SIZE, HUD_SLOT_SIZE };
+	return r;
+}
+
+HudRect hudHealthBarPosition(void)
+{
+	HudRect r = { HUD_HEALTH_BAR_X, HUD_HEALTH_BAR_Y, HUD_BAR_W, HUD_BAR_H };
+	return r;
+}
+
+HudRect hudHungerBarPosition(void)
+{
+	HudRect r = { HUD_HEALTH_BAR_X, HUD_HUNGER_BAR_Y, HUD_BAR_W, HUD_BAR_H };
 	return r;
 }
 
 static int inRect(int px, int py, HudRect r)
 {
-	return px >= r.x && px < r.x + HUD_SLOT_SIZE && py >= r.y && py < r.y + HUD_SLOT_SIZE;
+	return px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h;
 }
 
 HudHit hudHitTest(int px, int py)

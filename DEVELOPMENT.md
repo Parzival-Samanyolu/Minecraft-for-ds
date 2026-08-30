@@ -326,3 +326,95 @@ actually read as "day" and "night" to a human looking at the screen —
 the RGB values and the 0.35 floor are judgment calls made without being
 able to see them rendered. Same standing caveat as every NDS-visual
 choice so far.
+
+# Milestone 7 — mobs, survival stats (final priority-list item)
+
+Two mob kinds (`mob.h/c`), matching the brief exactly: one passive
+(wanders, flees the player) and one hostile (wanders, chases and attacks
+the player). No pathfinding — wander picks a random heading and commits
+to it for 1.5-4 seconds before picking another, flee/chase just aim
+straight at or away from the player every frame, so a mob genuinely can
+and will get stuck against a wall it doesn't route around. That's the
+explicitly-scoped behavior from the brief, not an oversight.
+
+**`entity.c` is new and both `player.c` and `mob.c` now depend on it.**
+It's the AABB-vs-voxel collision code (box-vs-block overlap, per-axis
+resolve-and-slide, snap-to-surface on landing) that used to live only in
+`player.c`, pulled out once mobs needed the exact same logic at a
+different box size. This is a refactor, not new behavior — confirmed by
+rerunning milestone 3's existing fall/wall-collision host tests
+unchanged afterward and getting bit-identical results (still lands at
+exactly y=13.000, still stops at exactly x=10.700 against the wall).
+
+**Spawning** (`mobWorldTrySpawn`) picks a random loaded chunk and a
+random column in it, scans down for the first standable surface (solid,
+non-water block with two clear blocks above it), and gates the kind on
+`dayNightIsNight()` — passive by day, hostile by night, one at a time
+per 5-second tick, capped at `MOB_MAX_COUNT = 6`. Host-tested: spawned
+mobs actually land on solid ground with headroom (checked against the
+real chunk data, not assumed), day/night gating produces the right kind
+every time, and the pool genuinely stops growing at the cap rather than
+overflowing `mobs[MOB_MAX_COUNT]`.
+
+**Combat is one-directional.** Hostile mobs deal `MOB_ATTACK_DAMAGE = 2`
+on contact with a 1-second cooldown (host-tested: one hit lands, the very
+next frame doesn't double it) — but there's no way to fight back. No
+weapon items, no "hit a mob" interaction at all. This is a genuine scope
+cut, not an oversight: the brief's priority list doesn't mention combat
+or tools, and adding a health/damage/death system for mobs on top of
+everything else here would be a meaningfully sized feature of its own.
+Right now a hostile mob is a hazard to route around or flee from, not
+something to kill.
+
+**Survival stats** (`Player.health`/`hunger`, `playerSurvivalStep()` in
+`player.c`) are on Minecraft's familiar 0-20 scale: hunger drains 1 every
+15s, health regens 1 every 4s while hunger > 6, and starvation damages 1
+every 8s once hunger hits 0 — floored at 1 HP, same as vanilla on normal
+difficulty, so starvation alone can't kill you. **There is no food item
+to eat yet** — the block palette (grass/dirt/stone/sand/water/wood/
+leaves/coal ore/planks/table/stick) has nothing edible, and adding one
+this late would be scope creep for a "keep the initial list small"
+brief. So hunger is presently a one-way drain to the starvation floor
+every session; the tick math is real and tested (host_test.c verifies
+the drain schedule, the regen schedule, and that starvation stops exactly
+at the floor, not below it), but there's currently no way back up. Taking
+lethal damage (from a hostile mob — the only damage source right now)
+respawns at the stored spawn point with full health and hunger restored,
+also host-tested.
+
+**Mobs render as plain textured boxes**, not models — there's no
+skeletal/animated mesh pipeline in this project, and a full model per
+mob type would be real scope for something this small in the DS's
+triangle budget anyway. Each active mob is 12 triangles (a cuboid) using
+the same per-face shading and day/night light multiplier as terrain, so
+at the population cap of 6 that's at most 72 extra triangles on top of
+the ~3800 from milestone 2's terrain budget — comfortably inside the
+~4000/frame target.
+
+**Health/hunger UI**: two small bars on the touch HUD (top-left, below
+the target preview, above everything else) — not interactive, just a
+readout, included in `hud_layout.c`'s region table so the overlap check
+still covers them (41 regions checked now, still zero overlaps).
+
+**Not verified from this sandbox**, same standing caveat as every
+NDS-visual/feel choice in this project: whether mob movement reads as
+"wandering" rather than jittery, whether the box models are legible at
+DS resolution, and whether the damage/regen pacing feels reasonable
+during actual play. All of the *logic* — collision, state transitions,
+spawn validity, damage/regen/starvation math — is host-tested and
+verified correct; how it plays is not something this sandbox can judge.
+
+---
+
+## Project status
+
+All seven milestones from the original brief are built and CI-verified:
+toolchain scaffold, chunked/streamed terrain with greedy meshing, player
+movement/collision with block break/place, inventory/hotbar/touch UI,
+crafting, day/night with lighting, and mobs with survival stats. What
+remains is everything this sandbox structurally cannot do: running the
+ROM on real hardware or in Delta, tuning anything by feel (movement
+speed, mob aggro ranges, sky colors, damage pacing), and swapping the
+placeholder textures for a real Minecraft resource pack you own (see the
+Texture assets section above). That's the natural next step, and it
+needs a human with a screen.

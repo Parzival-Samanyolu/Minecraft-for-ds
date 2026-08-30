@@ -48,6 +48,8 @@ enum {
 	TEX_PLANKS,
 	TEX_CRAFTING_TABLE,
 	TEX_STICK,       /* icon-only, never used as a mesh face */
+	TEX_MOB_PASSIVE, /* not a block face either -- mob.c's entities, drawn as a solid-textured box */
+	TEX_MOB_HOSTILE,
 	TEX_COUNT
 };
 

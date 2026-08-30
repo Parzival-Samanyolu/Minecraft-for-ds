@@ -1,5 +1,5 @@
-#include <math.h>
 #include "player.h"
+#include "entity.h"
 
 void playerInit(Player *p, float x, float y, float z)
 {
@@ -10,57 +10,15 @@ void playerInit(Player *p, float x, float y, float z)
 	p->yaw = 0.0f;
 	p->pitch = -15.0f;
 	p->onGround = 0;
-}
 
-static int boxCollides(World *w, float x, float y, float z)
-{
-	int x0 = (int)floorf(x - PLAYER_HALF_WIDTH);
-	int x1 = (int)floorf(x + PLAYER_HALF_WIDTH);
-	int y0 = (int)floorf(y);
-	int y1 = (int)floorf(y + PLAYER_HEIGHT - 0.01f);
-	int z0 = (int)floorf(z - PLAYER_HALF_WIDTH);
-	int z1 = (int)floorf(z + PLAYER_HALF_WIDTH);
-
-	for (int by = y0; by <= y1; by++)
-		for (int bz = z0; bz <= z1; bz++)
-			for (int bx = x0; bx <= x1; bx++)
-				if (worldIsCollidable(w, bx, by, bz))
-					return 1;
-	return 0;
-}
-
-/* each axis resolved against the position the previous axis already
- * settled on -- that's what makes sliding along a wall/floor fall out
- * for free instead of needing separate slide logic */
-static void moveAxis(Player *p, World *w, float dx, float dy, float dz)
-{
-	if (dx != 0.0f) {
-		float nx = p->x + dx;
-		if (!boxCollides(w, nx, p->y, p->z))
-			p->x = nx;
-	}
-	if (dz != 0.0f) {
-		float nz = p->z + dz;
-		if (!boxCollides(w, p->x, p->y, nz))
-			p->z = nz;
-	}
-	if (dy != 0.0f) {
-		float ny = p->y + dy;
-		if (!boxCollides(w, p->x, ny, p->z)) {
-			p->y = ny;
-			p->onGround = 0;
-		} else if (dy < 0.0f) {
-			/* snap feet to the top of whatever's underfoot instead of
-			 * leaving p->y wherever the last successful step happened to
-			 * land -- otherwise landing height is off by up to a frame's
-			 * worth of fall speed, which host_test.c caught immediately */
-			p->y = floorf(ny) + 1.0f;
-			p->onGround = 1;
-			p->vy = 0.0f;
-		} else {
-			p->vy = 0.0f;
-		}
-	}
+	p->spawnX = x;
+	p->spawnY = y;
+	p->spawnZ = z;
+	p->health = PLAYER_MAX_HEALTH;
+	p->hunger = PLAYER_MAX_HUNGER;
+	p->hungerTimer = 0.0f;
+	p->regenTimer = 0.0f;
+	p->starveTimer = 0.0f;
 }
 
 void playerStep(Player *p, World *w, float moveX, float moveZ, int jumpPressed, float dt)
@@ -74,5 +32,53 @@ void playerStep(Player *p, World *w, float moveX, float moveZ, int jumpPressed, 
 	if (p->vy < PLAYER_TERMINAL_VY)
 		p->vy = PLAYER_TERMINAL_VY;
 
-	moveAxis(p, w, moveX, p->vy * dt, moveZ);
+	entityMoveAxis(w, &p->x, &p->y, &p->z, &p->vy, &p->onGround,
+	               moveX, p->vy * dt, moveZ, PLAYER_HALF_WIDTH, PLAYER_HEIGHT);
+}
+
+void playerSurvivalStep(Player *p, float dt)
+{
+	p->hungerTimer += dt;
+	while (p->hungerTimer >= PLAYER_HUNGER_TICK_SECONDS) {
+		p->hungerTimer -= PLAYER_HUNGER_TICK_SECONDS;
+		if (p->hunger > 0)
+			p->hunger--;
+	}
+
+	if (p->hunger > PLAYER_REGEN_MIN_HUNGER && p->health < PLAYER_MAX_HEALTH) {
+		p->regenTimer += dt;
+		while (p->regenTimer >= PLAYER_REGEN_TICK_SECONDS) {
+			p->regenTimer -= PLAYER_REGEN_TICK_SECONDS;
+			if (p->health < PLAYER_MAX_HEALTH)
+				p->health++;
+		}
+	} else {
+		p->regenTimer = 0.0f;
+	}
+
+	if (p->hunger == 0 && p->health > PLAYER_STARVE_FLOOR) {
+		p->starveTimer += dt;
+		while (p->starveTimer >= PLAYER_STARVE_TICK_SECONDS) {
+			p->starveTimer -= PLAYER_STARVE_TICK_SECONDS;
+			if (p->health > PLAYER_STARVE_FLOOR)
+				p->health--;
+		}
+	} else {
+		p->starveTimer = 0.0f;
+	}
+}
+
+void playerApplyDamage(Player *p, int amount)
+{
+	p->health -= amount;
+	if (p->health <= 0) {
+		p->x = p->spawnX;
+		p->y = p->spawnY;
+		p->z = p->spawnZ;
+		p->vy = 0.0f;
+		p->onGround = 0;
+		p->health = PLAYER_MAX_HEALTH;
+		p->hunger = PLAYER_MAX_HUNGER;
+		p->hungerTimer = p->regenTimer = p->starveTimer = 0.0f;
+	}
 }

@@ -7,6 +7,6 @@
 
 void hudInit(void);
 void hudRender(const Inventory *inv, const CraftGrid *grid, int craftMode,
-                int hasTarget, BlockId targetBlock);
+                int hasTarget, BlockId targetBlock, int health, int hunger);
 
 #endif

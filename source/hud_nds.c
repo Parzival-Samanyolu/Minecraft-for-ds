@@ -2,6 +2,7 @@
 #include <string.h>
 #include "hud_nds.h"
 #include "hud_layout.h"
+#include "player.h"
 #include "texture_bin.h"
 
 #define TEX_TILE_BYTES (16 * 16 * 2)
@@ -49,9 +50,20 @@ static void drawSlotFrame(int x, int y, int highlighted)
 	fillRect(x + 1, y + 1, HUD_SLOT_SIZE - 2, HUD_SLOT_SIZE - 2, inner);
 }
 
-void hudRender(const Inventory *inv, const CraftGrid *grid, int craftMode,
-                int hasTarget, BlockId targetBlock)
+static void drawBar(HudRect r, int value, int maxValue, u16 fillColor)
 {
+	fillRect(r.x, r.y, r.w, r.h, ARGB16(1, 6, 6, 7));
+	int fillW = maxValue > 0 ? (r.w - 2) * value / maxValue : 0;
+	if (fillW > 0)
+		fillRect(r.x + 1, r.y + 1, fillW, r.h - 2, fillColor);
+}
+
+void hudRender(const Inventory *inv, const CraftGrid *grid, int craftMode,
+                int hasTarget, BlockId targetBlock, int health, int hunger)
+{
+	drawBar(hudHealthBarPosition(), health, PLAYER_MAX_HEALTH, ARGB16(1, 26, 3, 3));
+	drawBar(hudHungerBarPosition(), hunger, PLAYER_MAX_HUNGER, ARGB16(1, 20, 13, 3));
+
 	for (int i = 0; i < INV_TOTAL_SLOTS; i++) {
 		HudRect r = hudSlotPosition(i);
 		drawSlotFrame(r.x, r.y, i == inv->selectedHotbar);

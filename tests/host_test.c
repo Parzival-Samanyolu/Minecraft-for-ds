@@ -18,6 +18,7 @@
 #include "hud_layout.h"
 #include "craft.h"
 #include "daynight.h"
+#include "mob.h"
 
 /* mirrors emitQuadVerts()'s corner math in source/render_nds.c -- checked
  * here too since v16 (the NDS's vertex fixed-point format) only holds
@@ -223,7 +224,7 @@ int main(void)
 
 	printf("\n=== HUD layout: hit-testing and non-overlap across all regions ===\n");
 	int layoutOk = 1;
-#define HUD_REGION_COUNT (INV_TOTAL_SLOTS + CRAFT_GRID_SIZE + 2)
+#define HUD_REGION_COUNT (INV_TOTAL_SLOTS + CRAFT_GRID_SIZE + 5)
 	HudRect regionRect[HUD_REGION_COUNT];
 	HudHitKind regionKind[HUD_REGION_COUNT];
 	int regionIndex[HUD_REGION_COUNT];
@@ -246,30 +247,42 @@ int main(void)
 	regionKind[n] = HUD_HIT_CRAFT_TOGGLE;
 	regionIndex[n] = 0;
 	n++;
+	/* non-interactive display-only regions: expected hit kind is NONE,
+	 * they're only here so the overlap check also covers them */
+	HudRect targetRect = { HUD_TARGET_X, HUD_TARGET_Y, HUD_SLOT_SIZE, HUD_SLOT_SIZE };
+	regionRect[n] = targetRect;
+	regionKind[n] = HUD_HIT_NONE;
+	regionIndex[n] = 0;
+	n++;
+	regionRect[n] = hudHealthBarPosition();
+	regionKind[n] = HUD_HIT_NONE;
+	regionIndex[n] = 0;
+	n++;
+	regionRect[n] = hudHungerBarPosition();
+	regionKind[n] = HUD_HIT_NONE;
+	regionIndex[n] = 0;
+	n++;
 
 	for (int i = 0; i < n; i++) {
 		HudRect r = regionRect[i];
-		if (r.x < 0 || r.y < 0 || r.x + HUD_SLOT_SIZE > 256 || r.y + HUD_SLOT_SIZE > 192)
+		if (r.x < 0 || r.y < 0 || r.x + r.w > 256 || r.y + r.h > 192)
 			layoutOk = 0;
-		HudHit h = hudHitTest(r.x + HUD_SLOT_SIZE / 2, r.y + HUD_SLOT_SIZE / 2);
-		if (h.kind != regionKind[i] || h.index != regionIndex[i])
+		HudHit h = hudHitTest(r.x + r.w / 2, r.y + r.h / 2);
+		if (h.kind != regionKind[i] || (regionKind[i] != HUD_HIT_NONE && h.index != regionIndex[i]))
 			layoutOk = 0;
 	}
 	for (int i = 0; i < n && layoutOk; i++) {
 		HudRect a = regionRect[i];
 		for (int j = i + 1; j < n; j++) {
 			HudRect b = regionRect[j];
-			int overlapX = a.x < b.x + HUD_SLOT_SIZE && b.x < a.x + HUD_SLOT_SIZE;
-			int overlapY = a.y < b.y + HUD_SLOT_SIZE && b.y < a.y + HUD_SLOT_SIZE;
+			int overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
+			int overlapY = a.y < b.y + b.h && b.y < a.y + a.h;
 			if (overlapX && overlapY) {
 				layoutOk = 0;
 				break;
 			}
 		}
 	}
-	HudHit targetHit = hudHitTest(HUD_TARGET_X + HUD_SLOT_SIZE / 2, HUD_TARGET_Y + HUD_SLOT_SIZE / 2);
-	if (targetHit.kind != HUD_HIT_NONE)
-		layoutOk = 0; /* target preview box should not double as a real slot */
 	printf("%d regions checked (on-screen, centers hit-test correctly, no overlaps): %s\n",
 	       n, layoutOk ? "OK" : "FAIL");
 	if (!layoutOk)
@@ -417,6 +430,154 @@ int main(void)
 	printf("light level continuity over a full day: %s\n", continuityOk ? "OK" : "FAIL");
 	if (!continuityOk)
 		fail = 1;
+
+	printf("\n=== survival: hunger drain, regen, starvation, death/respawn ===\n");
+	Player sp;
+	playerInit(&sp, 3.0f, 40.0f, 3.0f); /* well above ground -- don't care about terrain here */
+	sp.health = 10;
+	for (int i = 0; i < (int)(PLAYER_HUNGER_TICK_SECONDS * 60.0f) + 5; i++)
+		playerSurvivalStep(&sp, 1.0f / 60.0f);
+	printf("after 1 hunger tick: hunger=%d (expect %d)\n", sp.hunger, PLAYER_MAX_HUNGER - 1);
+	if (sp.hunger != PLAYER_MAX_HUNGER - 1) {
+		printf("FAIL: hunger didn't drain on schedule\n");
+		fail = 1;
+	}
+
+	playerInit(&sp, 3.0f, 40.0f, 3.0f);
+	sp.health = 10;
+	sp.hunger = PLAYER_MAX_HUNGER; /* well fed -- should regen */
+	for (int i = 0; i < (int)(PLAYER_REGEN_TICK_SECONDS * 60.0f) + 5; i++)
+		playerSurvivalStep(&sp, 1.0f / 60.0f);
+	printf("after 1 regen tick while well fed: health=%d (expect 11)\n", sp.health);
+	if (sp.health != 11) {
+		printf("FAIL: health didn't regen while well fed\n");
+		fail = 1;
+	}
+
+	playerInit(&sp, 3.0f, 40.0f, 3.0f);
+	sp.health = PLAYER_MAX_HEALTH;
+	sp.hunger = 0;
+	int starveSeconds = 0;
+	while (sp.health > PLAYER_STARVE_FLOOR && starveSeconds < 10000) {
+		playerSurvivalStep(&sp, 1.0f / 60.0f);
+		starveSeconds++;
+	}
+	printf("starving from 0 hunger: health settled at %d (expect %d, floor)\n", sp.health, PLAYER_STARVE_FLOOR);
+	if (sp.health != PLAYER_STARVE_FLOOR) {
+		printf("FAIL: starvation should stop exactly at the floor, not below or above\n");
+		fail = 1;
+	}
+
+	playerInit(&sp, 3.0f, 5.0f, 3.0f);
+	sp.health = 5;
+	playerApplyDamage(&sp, 10);
+	printf("lethal damage: health=%d pos=(%.1f,%.1f,%.1f) (expect full health, back at spawn)\n",
+	       sp.health, sp.x, sp.y, sp.z);
+	if (sp.health != PLAYER_MAX_HEALTH || sp.x != sp.spawnX || sp.y != sp.spawnY || sp.z != sp.spawnZ) {
+		printf("FAIL: death didn't respawn with full stats at the spawn point\n");
+		fail = 1;
+	}
+
+	printf("\n=== mobs: flee, chase+attack, spawn placement/gating/cap ===\n");
+	MobWorld mwt;
+	mobWorldInit(&mwt, 42);
+	Mob *fleeMob = &mwt.mobs[0];
+	fleeMob->active = 1;
+	fleeMob->kind = MOB_PASSIVE;
+	fleeMob->x = pl.x; /* offset along z, not x -- x=11 has the stone wall the earlier collision test built */
+	fleeMob->y = pl.y;
+	fleeMob->z = pl.z + 1.0f;
+	fleeMob->vy = 0.0f;
+	fleeMob->onGround = 0;
+	fleeMob->attackCooldown = 0.0f;
+	fleeMob->rngState = 7;
+	float fleeStartDx = fleeMob->x - pl.x, fleeStartDz = fleeMob->z - pl.z;
+	float fleeStartDist = sqrtf(fleeStartDx * fleeStartDx + fleeStartDz * fleeStartDz);
+	for (int i = 0; i < 120; i++)
+		mobWorldStep(&mwt, &world, &pl, 1.0f / 60.0f);
+	float fleeEndDx = fleeMob->x - pl.x, fleeEndDz = fleeMob->z - pl.z;
+	float fleeEndDist = sqrtf(fleeEndDx * fleeEndDx + fleeEndDz * fleeEndDz);
+	printf("passive mob fled from dist=%.2f to dist=%.2f\n", fleeStartDist, fleeEndDist);
+	if (fleeEndDist <= fleeStartDist) {
+		printf("FAIL: passive mob should move away from a nearby player\n");
+		fail = 1;
+	}
+
+	MobWorld mwt2;
+	mobWorldInit(&mwt2, 99);
+	Mob *biter = &mwt2.mobs[0];
+	biter->active = 1;
+	biter->kind = MOB_HOSTILE;
+	biter->x = pl.x; /* offset along z, not x -- x=11 has the stone wall the earlier collision test built */
+	biter->y = pl.y;
+	biter->z = pl.z + 0.4f;
+	biter->vy = 0.0f;
+	biter->onGround = 1;
+	biter->attackCooldown = 0.0f;
+	biter->rngState = 11;
+	Player bitten = pl;
+	bitten.health = PLAYER_MAX_HEALTH;
+	mobWorldStep(&mwt2, &world, &bitten, 1.0f / 60.0f);
+	int healthAfterFirstHit = bitten.health;
+	mobWorldStep(&mwt2, &world, &bitten, 1.0f / 60.0f);
+	int healthAfterSecondStep = bitten.health;
+	printf("hostile mob in melee range: health %d -> %d -> %d (one hit, then cooldown)\n",
+	       PLAYER_MAX_HEALTH, healthAfterFirstHit, healthAfterSecondStep);
+	if (healthAfterFirstHit != PLAYER_MAX_HEALTH - MOB_ATTACK_DAMAGE || healthAfterSecondStep != healthAfterFirstHit) {
+		printf("FAIL: hostile mob should deal damage once and then respect its cooldown\n");
+		fail = 1;
+	}
+
+	MobWorld mwDay, mwNight;
+	mobWorldInit(&mwDay, 1);
+	mobWorldInit(&mwNight, 2);
+	DayNight dnDay, dnNight;
+	dayNightInit(&dnDay);
+	dayNightInit(&dnNight);
+	dayNightStep(&dnNight, DAY_LENGTH_SECONDS * 0.7f);
+
+	mobWorldTrySpawn(&mwDay, &world, &dnDay, &pl, MOB_SPAWN_INTERVAL_SECONDS + 0.1f);
+	mobWorldTrySpawn(&mwNight, &world, &dnNight, &pl, MOB_SPAWN_INTERVAL_SECONDS + 0.1f);
+
+	int dayCount = 0, dayKindOk = 1, dayGroundOk = 1;
+	for (int i = 0; i < MOB_MAX_COUNT; i++) {
+		if (!mwDay.mobs[i].active)
+			continue;
+		dayCount++;
+		if (mwDay.mobs[i].kind != MOB_PASSIVE)
+			dayKindOk = 0;
+		int fx = (int)floorf(mwDay.mobs[i].x), fy = (int)mwDay.mobs[i].y, fz = (int)floorf(mwDay.mobs[i].z);
+		if (!worldIsCollidable(&world, fx, fy - 1, fz) || worldIsCollidable(&world, fx, fy, fz))
+			dayGroundOk = 0;
+	}
+	int nightCount = 0, nightKindOk = 1;
+	for (int i = 0; i < MOB_MAX_COUNT; i++) {
+		if (!mwNight.mobs[i].active)
+			continue;
+		nightCount++;
+		if (mwNight.mobs[i].kind != MOB_HOSTILE)
+			nightKindOk = 0;
+	}
+	printf("day spawn: count=%d kind_ok=%d ground_ok=%d | night spawn: count=%d kind_ok=%d\n",
+	       dayCount, dayKindOk, dayGroundOk, nightCount, nightKindOk);
+	if (dayCount != 1 || !dayKindOk || !dayGroundOk || nightCount != 1 || !nightKindOk) {
+		printf("FAIL: day/night spawn gating or ground placement is wrong\n");
+		fail = 1;
+	}
+
+	MobWorld mwCap;
+	mobWorldInit(&mwCap, 3);
+	for (int i = 0; i < MOB_MAX_COUNT + 3; i++)
+		mobWorldTrySpawn(&mwCap, &world, &dnDay, &pl, MOB_SPAWN_INTERVAL_SECONDS + 0.1f);
+	int capCount = 0;
+	for (int i = 0; i < MOB_MAX_COUNT; i++)
+		if (mwCap.mobs[i].active)
+			capCount++;
+	printf("spawn population cap: %d active (limit %d)\n", capCount, MOB_MAX_COUNT);
+	if (capCount != MOB_MAX_COUNT) {
+		printf("FAIL: mob pool should fill exactly to its cap, no more\n");
+		fail = 1;
+	}
 
 	printf("\n=== streaming as the camera walks across chunk borders ===\n");
 	int32_t walk[][2] = { { 16, 0 }, { 32, 0 }, { 200, 0 }, { 200, 16 }, { 200, 200 } };

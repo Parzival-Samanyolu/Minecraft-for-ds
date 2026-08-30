@@ -123,6 +123,26 @@ def tile_stick():
     return px
 
 
+def tile_mob_passive():
+    px = tile_speckle((26, 17, 15), 2, 14)
+    for y in range(4, 7):
+        for x in range(4, 7):
+            px[y][x] = rgb15(4, 4, 4)
+        for x in range(9, 12):
+            px[y][x] = rgb15(4, 4, 4)
+    return px
+
+
+def tile_mob_hostile():
+    px = tile_speckle((8, 18, 8), 2, 15)
+    for y in range(5, 8):
+        for x in range(4, 7):
+            px[y][x] = rgb15(31, 4, 4)
+        for x in range(9, 12):
+            px[y][x] = rgb15(31, 4, 4)
+    return px
+
+
 TEXTURES = [
     tile_grass_top(),
     tile_grass_side(),
@@ -137,6 +157,8 @@ TEXTURES = [
     tile_planks(),
     tile_crafting_table(),
     tile_stick(),
+    tile_mob_passive(),
+    tile_mob_hostile(),
 ]
 
 with open("data/texture.bin", "wb") as f:
