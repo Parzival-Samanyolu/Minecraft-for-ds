@@ -168,12 +168,63 @@ leave a redundant internal face on the neighbor's already-built edge
 note in milestone 2, not fixed here either.
 
 **Controls**: D-pad look (yaw/pitch), A/B walk forward/back, L/R strafe,
-X jump, Y break the targeted block, SELECT place stone into it, START
-quit. Bottom screen shows position/ground state, current center chunk,
-and the targeted block's coordinates and type.
+X jump, Y break the targeted block, SELECT place the selected hotbar item,
+START quit. As of milestone 4 the bottom screen is the touch inventory
+HUD (see below), not debug text.
 
 **Not verified from this sandbox**: same as before — actual movement feel,
 jump height, and whether 0.05-block raycast steps are fine-grained enough
 in practice all need real hardware or Delta to judge. The physics numbers
 (gravity, jump speed, walk speed) are unitless guesses tuned by "seems
 about right" reasoning, not measured against anything.
+
+# Milestone 4 — inventory, hotbar, bottom-screen touch UI
+
+Breaking a block now adds it to the inventory (`inventory.h/c`, no libnds
+dependency, host-tested) instead of just deleting it, and placing uses
+whatever's in the selected hotbar slot instead of always being stone —
+empty-handed placing is a no-op. Inventory is 32 slots: the first 8 are
+the hotbar (always visible), the rest a 3x8 backing grid. Tap a hotbar
+slot to select it; tap a grid slot to swap it with whatever's currently
+selected. That's the whole interaction model — no drag, no split-stack,
+no shift-click — deliberately simpler than real Minecraft's inventory
+rules, and good enough to move items around with two taps.
+
+**The debug text console is gone.** Milestones 1-3 used
+`consoleDemoInit()` for status text on the bottom screen; that's a
+different NDS background mode than what a real touch UI needs
+(`BgType_Bmp16`, a directly-writable 16-bit bitmap layer), and mixing a
+text console with a bitmap layer on separate BG slots without them
+visually colliding was more risk than it was worth for what the spec
+actually asked for. So the bottom screen is now 100% the inventory/hotbar
+HUD, per the brief, and there's no on-screen debug readout anymore.
+
+**Why a hand-rolled bitmap HUD instead of sprites/tiles**: the mode table
+in libnds' `video.h` only allows `BgType_Bmp16` (a real-color bitmap you
+can plot individual pixels into) on BG2/BG3 in `MODE_5_2D` — verified by
+pulling the actual header rather than assuming, since picking the wrong
+mode would just silently show a blank screen with no error. Given that,
+plotting slot borders/icons as raw pixels (`hud_nds.c`) was simpler than
+setting up a tile/palette pipeline for something this small: 32 inventory
+slots + 1 target preview, each a 20x20 cell (16x16 icon, reusing the same
+`TEX_*` blob the 3D renderer already loads, plus a 2px border). One
+real gotcha caught by reading the format doc closely: `BgType_Bmp16`
+pixels are `aBBBBBGGGGGRRRRR` — the alpha bit controls whether a pixel
+renders at all, and our `TEX_*` texture data never sets it (the 3D
+`GL_RGB` texture format forces opacity in hardware instead, so it was
+never needed there). Blitting a texture tile into the bitmap HUD without
+OR-ing in that bit would render every icon as fully transparent — nothing
+visibly wrong at the C level, just an empty-looking HUD. `blitIcon()` in
+`hud_nds.c` ORs `BIT(15)` onto every copied pixel to account for this.
+
+**What's host-tested vs. CI-only**: `hud_layout.c` (slot pixel positions,
+touch-point-to-slot hit testing) has no libnds dependency, so
+`tests/host_test.c` checks all 32 slots are on-screen, that tapping a
+slot's center resolves back to that same slot, that no two slots'
+rectangles overlap, and that the target-preview box doesn't double as a
+real slot. `inventory.c` is checked too: stacking across the 64-item cap
+splits into two slots correctly, and a deliberate swap-then-take sequence
+moves and consumes exactly the items it should. None of that touches
+`hud_nds.c` itself (the actual pixel plotting, `bgInitSub`, the video
+mode) — that's CI-compile-verified only, same caveat as everything
+NDS-specific so far: I still can't see the screen.

@@ -1,32 +1,18 @@
 #include <nds.h>
 #include <math.h>
-#include <stdio.h>
 
 #include "world.h"
 #include "player.h"
 #include "raycast.h"
 #include "render_nds.h"
+#include "inventory.h"
+#include "hud_layout.h"
+#include "hud_nds.h"
 
 #define DEG2RAD 0.0174532925f
 #define TURN_SPEED 2.2f    /* degrees/frame */
 #define REACH 5.0f         /* blocks, break/place range */
 #define DT (1.0f / 60.0f)
-
-static const char *blockName(BlockId b)
-{
-	switch (b) {
-	case BLOCK_AIR: return "air";
-	case BLOCK_GRASS: return "grass";
-	case BLOCK_DIRT: return "dirt";
-	case BLOCK_STONE: return "stone";
-	case BLOCK_SAND: return "sand";
-	case BLOCK_WATER: return "water";
-	case BLOCK_WOOD: return "wood";
-	case BLOCK_LEAVES: return "leaves";
-	case BLOCK_COAL_ORE: return "coal ore";
-	default: return "?";
-	}
-}
 
 static void cameraForward(float yaw, float pitch, float *fx, float *fy, float *fz)
 {
@@ -40,10 +26,6 @@ static void cameraForward(float yaw, float pitch, float *fx, float *fy, float *f
 static void initGraphics(void)
 {
 	videoSetMode(MODE_0_3D);
-	videoSetModeSub(MODE_0_2D);
-	vramSetBankC(VRAM_C_SUB_BG);
-
-	consoleDemoInit();
 
 	glInit();
 	glEnable(GL_TEXTURE_2D);
@@ -61,6 +43,7 @@ static void initGraphics(void)
 	gluPerspective(70, 256.0 / 192.0, 0.05f, 40.0f);
 
 	renderInit();
+	hudInit();
 }
 
 int main(void)
@@ -74,8 +57,8 @@ int main(void)
 	playerInit(&pl, 8.5f, 30.0f, 8.5f);
 	worldUpdate(&world, (int32_t)pl.x, (int32_t)pl.z);
 
-	int frame = 0;
-	int lastBuilt = 0;
+	Inventory inv;
+	inventoryInit(&inv);
 
 	while (pmMainLoop())
 	{
@@ -103,15 +86,33 @@ int main(void)
 		moveZ *= PLAYER_WALK_SPEED * DT;
 
 		playerStep(&pl, &world, moveX, moveZ, held & KEY_X, DT);
-		lastBuilt = worldUpdate(&world, (int32_t)pl.x, (int32_t)pl.z);
+		worldUpdate(&world, (int32_t)pl.x, (int32_t)pl.z);
 
 		float eyeX = pl.x, eyeY = pl.y + PLAYER_EYE_HEIGHT, eyeZ = pl.z;
 		RaycastHit target = raycastBlocks(&world, eyeX, eyeY, eyeZ, fx, fy, fz, REACH);
 
-		if ((down & KEY_Y) && target.hit)
+		if ((down & KEY_Y) && target.hit) {
+			BlockId broken = worldGetBlock(&world, target.bx, target.by, target.bz);
 			worldSetBlock(&world, target.bx, target.by, target.bz, BLOCK_AIR);
-		if ((down & KEY_SELECT) && target.hit)
-			worldSetBlock(&world, target.px, target.py, target.pz, BLOCK_STONE);
+			inventoryAddItem(&inv, broken, 1);
+		}
+		if ((down & KEY_SELECT) && target.hit) {
+			BlockId toPlace = inventorySelectedBlock(&inv);
+			if (toPlace != BLOCK_AIR) {
+				worldSetBlock(&world, target.px, target.py, target.pz, toPlace);
+				inventoryTakeSelected(&inv);
+			}
+		}
+
+		if (down & KEY_TOUCH) {
+			touchPosition touch;
+			touchRead(&touch);
+			int slot = hudSlotAtPoint(touch.px, touch.py);
+			if (slot >= 0 && slot < INV_HOTBAR_SLOTS)
+				inv.selectedHotbar = slot;
+			else if (slot >= 0)
+				inventorySwap(&inv, inv.selectedHotbar, slot);
+		}
 
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
@@ -122,23 +123,9 @@ int main(void)
 		renderWorld(&world);
 		glFlush(0);
 
-		if (frame % 15 == 0)
-		{
-			consoleClear();
-			iprintf("Minecraft-DS  player+blocks\n\n");
-			iprintf("pos    %d,%d,%d %s\n", (int)pl.x, (int)pl.y, (int)pl.z,
-			        pl.onGround ? "(ground)" : "(air)");
-			iprintf("chunk  %d,%d  built %d\n", world.centerCx, world.centerCz, lastBuilt);
-			if (target.hit)
-				iprintf("target %d,%d,%d %s\n", (int)target.bx, (int)target.by,
-				        (int)target.bz, blockName(worldGetBlock(&world, target.bx, target.by, target.bz)));
-			else
-				iprintf("target none\n");
-			iprintf("\nD-pad look, A/B fwd/back\nL/R strafe, X jump\nY break, SELECT place\n");
-		}
+		hudRender(&inv, target.hit, target.hit ? worldGetBlock(&world, target.bx, target.by, target.bz) : BLOCK_AIR);
 
 		swiWaitForVBlank();
-		frame++;
 
 		if (held & KEY_START)
 			break;

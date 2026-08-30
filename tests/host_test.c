@@ -14,6 +14,8 @@
 #include "render_nds.h"
 #include "player.h"
 #include "raycast.h"
+#include "inventory.h"
+#include "hud_layout.h"
 
 /* mirrors emitQuadVerts()'s corner math in source/render_nds.c -- checked
  * here too since v16 (the NDS's vertex fixed-point format) only holds
@@ -185,6 +187,65 @@ int main(void)
 		printf("FAIL: player tunneled into/through the wall\n");
 		fail = 1;
 	}
+
+	printf("\n=== inventory: stacking, selection, swap ===\n");
+	Inventory inv;
+	inventoryInit(&inv);
+	int leftover = inventoryAddItem(&inv, BLOCK_STONE, 70);
+	int stoneCount = 0, stoneSlots = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (inv.slots[i].id == BLOCK_STONE) { stoneCount += inv.slots[i].count; stoneSlots++; }
+	printf("added 70 stone: leftover=%d, landed in %d slot(s) totalling %d\n", leftover, stoneSlots, stoneCount);
+	if (leftover != 0 || stoneCount != 70 || stoneSlots != 2) {
+		printf("FAIL: stacking across the 64-item cap didn't split/land as expected\n");
+		fail = 1;
+	}
+
+	/* inventoryAddItem fills low slot indices first, so both stone stacks
+	 * from above landed in the hotbar (0 and 1) -- place something
+	 * deliberate in a grid slot instead of relying on that fill order */
+	inv.slots[10].id = BLOCK_WOOD;
+	inv.slots[10].count = 5;
+	inv.selectedHotbar = 2; /* currently empty */
+	inventorySwap(&inv, 2, 10);
+	BlockId picked = inventorySelectedBlock(&inv);
+	int countBefore = inv.slots[2].count;
+	BlockId taken = inventoryTakeSelected(&inv);
+	int countAfter = inv.slots[2].count;
+	printf("swap grid[10] wood into hotbar[2]: picked=%d before=%d after=%d taken=%d, grid[10] now id=%d\n",
+	       picked, countBefore, countAfter, taken, inv.slots[10].id);
+	if (taken != BLOCK_WOOD || countAfter != countBefore - 1 || inv.slots[10].id != BLOCK_AIR) {
+		printf("FAIL: swap+take didn't move/consume items as expected\n");
+		fail = 1;
+	}
+
+	printf("\n=== HUD layout: slot hit-testing and non-overlap ===\n");
+	int layoutOk = 1;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++) {
+		HudRect r = hudSlotPosition(i);
+		if (r.x < 0 || r.y < 0 || r.x + HUD_SLOT_SIZE > 256 || r.y + HUD_SLOT_SIZE > 192)
+			layoutOk = 0;
+		if (hudSlotAtPoint(r.x + HUD_SLOT_SIZE / 2, r.y + HUD_SLOT_SIZE / 2) != i)
+			layoutOk = 0;
+	}
+	for (int i = 0; i < INV_TOTAL_SLOTS && layoutOk; i++) {
+		HudRect a = hudSlotPosition(i);
+		for (int j = i + 1; j < INV_TOTAL_SLOTS; j++) {
+			HudRect b = hudSlotPosition(j);
+			int overlapX = a.x < b.x + HUD_SLOT_SIZE && b.x < a.x + HUD_SLOT_SIZE;
+			int overlapY = a.y < b.y + HUD_SLOT_SIZE && b.y < a.y + HUD_SLOT_SIZE;
+			if (overlapX && overlapY) {
+				layoutOk = 0;
+				break;
+			}
+		}
+	}
+	if (hudSlotAtPoint(HUD_TARGET_X + HUD_SLOT_SIZE / 2, HUD_TARGET_Y + HUD_SLOT_SIZE / 2) != -1)
+		layoutOk = 0; /* target preview box should not double as a real inventory slot */
+	printf("%d slots checked (on-screen, centers hit-test to themselves, no overlaps): %s\n",
+	       INV_TOTAL_SLOTS, layoutOk ? "OK" : "FAIL");
+	if (!layoutOk)
+		fail = 1;
 
 	printf("\n=== streaming as the camera walks across chunk borders ===\n");
 	int32_t walk[][2] = { { 16, 0 }, { 32, 0 }, { 200, 0 }, { 200, 16 }, { 200, 200 } };

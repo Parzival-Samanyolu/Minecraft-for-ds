@@ -5,12 +5,12 @@ A cut-down Minecraft-style voxel sandbox for real Nintendo DS hardware
 ~656KB VRAM, fixed-function GPU. No redstone, no pathfinding, no
 multiplayer.
 
-Status: milestone 3 (player movement/collision, block break/place) --
-streamed 16x32x16 chunks, integer value-noise heightmap terrain,
-greedy-meshed rendering, a grounded player (gravity/jump/walk/collision)
-and raycast block break/place on the top screen, position/target info on
-the bottom screen. Inventory, crafting, day/night and mobs are not built
-yet.
+Status: milestone 4 (inventory, hotbar, touch UI) -- streamed 16x32x16
+chunks, integer value-noise heightmap terrain, greedy-meshed rendering, a
+grounded player (gravity/jump/walk/collision) with raycast block
+break/place on the top screen, and a real touch-driven hotbar + inventory
+grid on the bottom screen (breaking a block picks it up, placing spends
+whatever's selected). Crafting, day/night and mobs are not built yet.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions and the note on
 texture assets.
