@@ -108,13 +108,72 @@ it — currently the real worst case is 3.8 (terrain doesn't reach the full
 bug that would otherwise only show up as corrupted/wrapped geometry on
 real hardware with no error message, so it seemed worth a host-side check.
 
-**Fly camera**: no player/physics yet (that's milestone 3). D-pad turns
-(left/right yaw, up/down pitch), A/B move forward/back, X/Y move up/down,
-L/R strafe. Bottom screen shows position, current center chunk, and how
-many chunks were rebuilt on the last streaming update.
-
 **Not verified from this sandbox**: actual frame rate, and whether the
 above triangle-budget math holds up against the *real* DS rasterizer
 (the "~120k tris/sec" figure is a commonly cited ballpark, not something
 measured here) — that needs real hardware or Delta, same caveat as
 milestone 1.
+
+# Milestone 3 — player movement/collision, block break/place
+
+The milestone-2 fly camera is gone; `Player` (`player.h/c`) is a grounded
+character now: gravity, jump, walking, AABB-vs-voxel collision. It has no
+libnds dependency either, so `tests/host_test.c` drives real physics steps
+against a real generated world instead of trusting the math by inspection.
+
+**Collision**: per-axis AABB resolution (move X, resolve; move Z, resolve;
+move Y, resolve) against `worldIsCollidable()` — standard technique, and
+cheap enough that a full 3D box-vs-blocks sweep per axis per frame is a
+non-issue at these block counts. `blockIsCollidable()` reuses the exact
+same rule as mesh opacity (air and water don't block you) rather than
+duplicating it. Water isn't swimmable yet, just walkable-through.
+
+**A bug host_test.c actually caught**: the first version of the Y-axis
+resolution left the player wherever their last successful step happened to
+land, rather than snapping to the surface. That meant landing height was
+off by up to one frame's fall distance — the test (drop the player from
+above the world, check landed height against the real terrain height)
+failed with the player resting 0.2 blocks above the ground instead of
+exactly on it. Fixed by snapping feet to `floor(y) + 1` on a downward
+collision instead of leaving position wherever it stopped. A second test
+(walk into a hand-placed wall for 5 seconds of held input) checks the
+horizontal case doesn't tunnel either — it doesn't, the player stops
+exactly at the wall face. Both regressions would otherwise have been "why
+does the player float" or "why did I fall through the floor" bugs only
+discoverable on real hardware with no debugger.
+
+**"Unloaded chunk = solid"**: `worldIsCollidable()` treats a block outside
+the streamed radius-1 window as collidable rather than open air. This was
+a deliberate choice (documented in milestone 2 already) so the player
+can't fall into an ungenerated void at the edge of the loaded area — but
+it means walking to the edge of the loaded world currently feels like
+hitting an invisible wall rather than the world simply not existing yet.
+That's an acceptable stand-in until streaming radius grows or terrain
+extends further than render distance; noting it here because it's exactly
+the kind of thing that reads as a bug if you don't know it's on purpose
+(host_test.c's own player-drop test tripped over it once, when the test
+order let an earlier streaming-walk check move the loaded window away
+from the block being tested).
+
+**Block break/place**: `raycast.c` marches the camera ray in fixed
+0.05-block steps (not a DDA voxel walk — reach is only 5 blocks, so the
+extra steps are free, and it sidesteps the axis-aligned edge cases a grid
+DDA is prone to) and reports both the hit block and the empty cell just
+before it. Break clears the hit block; place always places stone into
+that empty cell — there's no inventory yet (milestone 4), so "what to
+place" is hardcoded for now. `worldSetBlock()` rebuilds only the edited
+chunk's mesh, not its neighbors' — editing a block on a chunk seam can
+leave a redundant internal face on the neighbor's already-built edge
+(harmless, just an extra unseen quad), same tradeoff as the meshing seam
+note in milestone 2, not fixed here either.
+
+**Controls**: D-pad look (yaw/pitch), A/B walk forward/back, L/R strafe,
+X jump, Y break the targeted block, SELECT place stone into it, START
+quit. Bottom screen shows position/ground state, current center chunk,
+and the targeted block's coordinates and type.
+
+**Not verified from this sandbox**: same as before — actual movement feel,
+jump height, and whether 0.05-block raycast steps are fine-grained enough
+in practice all need real hardware or Delta to judge. The physics numbers
+(gravity, jump speed, walk speed) are unitless guesses tuned by "seems
+about right" reasoning, not measured against anything.

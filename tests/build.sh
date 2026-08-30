@@ -5,5 +5,6 @@ set -e
 cd "$(dirname "$0")/.."
 gcc -std=c99 -Wall -Wextra -O2 -Iinclude \
     tests/host_test.c source/noise.c source/worldgen.c source/mesh.c source/world.c \
+    source/player.c source/raycast.c \
     -o /tmp/host_test -lm
 /tmp/host_test

@@ -4,6 +4,7 @@
  * out on real hardware whether the mesher is even correct */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "chunk.h"
 #include "block.h"
 #include "noise.h"
@@ -11,6 +12,8 @@
 #include "mesh.h"
 #include "world.h"
 #include "render_nds.h"
+#include "player.h"
+#include "raycast.h"
 
 /* mirrors emitQuadVerts()'s corner math in source/render_nds.c -- checked
  * here too since v16 (the NDS's vertex fixed-point format) only holds
@@ -125,6 +128,64 @@ int main(void)
 	printf("\nresident world memory: %ld bytes (%.1f KB) for a %dx%d chunk window\n",
 	       worldMemBytes, worldMemBytes / 1024.0, WORLD_GRID_DIM, WORLD_GRID_DIM);
 
+	int fail = overflowedChunks > 0 || worstLocalCoord >= 7.9f;
+	if (overflowedChunks > 0)
+		printf("\nFAIL: mesh quad cap was too small for generated terrain\n");
+	if (worstLocalCoord >= 7.9f)
+		printf("\nFAIL: a vertex coordinate is too close to the v16 range limit\n");
+
+	/* player/raycast/block-edit checks run against the chunk at (0,0),
+	 * so they need to happen before the streaming walk below moves the
+	 * loaded window away from it */
+	printf("\n=== player physics: drop from above the world onto terrain ===\n");
+	int dropH = worldgenColumnHeight(8, 8);
+	Player pl;
+	playerInit(&pl, 8.5f, 40.0f, 8.5f);
+	int fellFrames = 0;
+	for (; fellFrames < 600 && !pl.onGround; fellFrames++)
+		playerStep(&pl, &world, 0.0f, 0.0f, 0, 1.0f / 60.0f);
+	printf("terrain height at (8,8): %d\n", dropH);
+	printf("fell for %d frames, landed at y=%.3f, onGround=%d\n", fellFrames, pl.y, pl.onGround);
+	if (!pl.onGround) {
+		printf("FAIL: player never landed (fell through terrain or got stuck airborne)\n");
+		fail = 1;
+	} else if (fabsf(pl.y - (dropH + 1)) > 0.001f) {
+		printf("FAIL: landed at the wrong height (expected ~%d)\n", dropH + 1);
+		fail = 1;
+	}
+
+	printf("\n=== raycast: look straight down from just above the landing spot ===\n");
+	RaycastHit hit = raycastBlocks(&world, pl.x, pl.y + PLAYER_EYE_HEIGHT, pl.z, 0.0f, -1.0f, 0.0f, 8.0f);
+	printf("hit=%d block=(%d,%d,%d) place=(%d,%d,%d)\n",
+	       hit.hit, hit.bx, hit.by, hit.bz, hit.px, hit.py, hit.pz);
+	if (!hit.hit || hit.bx != 8 || hit.by != dropH || hit.bz != 8) {
+		printf("FAIL: raycast didn't hit the block the player is standing on\n");
+		fail = 1;
+	}
+
+	printf("\n=== block break/place round-trip ===\n");
+	BlockId before = worldGetBlock(&world, 8, dropH, 8);
+	worldSetBlock(&world, 8, dropH, 8, BLOCK_AIR);
+	BlockId afterBreak = worldGetBlock(&world, 8, dropH, 8);
+	worldSetBlock(&world, 8, dropH, 8, BLOCK_STONE);
+	BlockId afterPlace = worldGetBlock(&world, 8, dropH, 8);
+	printf("before=%d afterBreak=%d afterPlace=%d\n", before, afterBreak, afterPlace);
+	if (afterBreak != BLOCK_AIR || afterPlace != BLOCK_STONE) {
+		printf("FAIL: worldSetBlock didn't stick\n");
+		fail = 1;
+	}
+
+	printf("\n=== wall collision: walk straight into a stone wall ===\n");
+	for (int y = dropH + 1; y < dropH + 4; y++)
+		worldSetBlock(&world, 11, y, 8, BLOCK_STONE);
+	for (int i = 0; i < 300; i++)
+		playerStep(&pl, &world, PLAYER_WALK_SPEED / 60.0f, 0.0f, 0, 1.0f / 60.0f);
+	printf("stopped at x=%.3f (wall front face is at x=11.0)\n", pl.x);
+	if (pl.x >= 11.0f - PLAYER_HALF_WIDTH + 0.01f) {
+		printf("FAIL: player tunneled into/through the wall\n");
+		fail = 1;
+	}
+
 	printf("\n=== streaming as the camera walks across chunk borders ===\n");
 	int32_t walk[][2] = { { 16, 0 }, { 32, 0 }, { 200, 0 }, { 200, 16 }, { 200, 200 } };
 	for (size_t i = 0; i < sizeof(walk) / sizeof(walk[0]); i++) {
@@ -132,12 +193,8 @@ int main(void)
 		printf("worldUpdate(%d,%d): %d chunks (re)built\n", walk[i][0], walk[i][1], b);
 	}
 
-	if (overflowedChunks > 0) {
-		printf("\nFAIL: mesh quad cap was too small for generated terrain\n");
-		return 1;
-	}
-	if (worstLocalCoord >= 7.9f) {
-		printf("\nFAIL: a vertex coordinate is too close to the v16 range limit\n");
+	if (fail) {
+		printf("\nFAIL\n");
 		return 1;
 	}
 	printf("\nOK\n");

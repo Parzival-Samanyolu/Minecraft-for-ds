@@ -48,6 +48,13 @@ static inline int blockIsSolid(BlockId b)
 	return b != BLOCK_AIR;
 }
 
+/* same rule as opacity (air and water don't block you either) -- named
+ * separately so physics code doesn't read like it's making a meshing call */
+static inline int blockIsCollidable(BlockId b)
+{
+	return blockIsOpaque(b);
+}
+
 /* dir: 0 = -axis face (bottom/-x/-z), 1 = +axis face (top/+x/+z)
  * axis: 0=x, 1=y, 2=z */
 static inline uint8_t blockFaceTexture(BlockId b, int axis, int dir)

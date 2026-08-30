@@ -37,4 +37,16 @@ int worldUpdate(World *w, int32_t worldX, int32_t worldZ);
 
 Chunk *worldGetChunkAt(World *w, int32_t cx, int32_t cz);
 
+/* block queries/edits in world (block) coordinates, not chunk-local.
+ * a chunk outside the streamed window counts as collidable -- that's a
+ * deliberate "world edge is a wall, not a cliff into the void" choice,
+ * see DEVELOPMENT.md */
+int worldIsCollidable(World *w, int32_t x, int32_t y, int32_t z);
+BlockId worldGetBlock(World *w, int32_t x, int32_t y, int32_t z);
+
+/* no-op if the target chunk isn't currently loaded; otherwise edits the
+ * block and immediately rebuilds that chunk's mesh (not its neighbors'
+ * -- see DEVELOPMENT.md for the seam-artifact tradeoff this implies) */
+void worldSetBlock(World *w, int32_t x, int32_t y, int32_t z, BlockId b);
+
 #endif

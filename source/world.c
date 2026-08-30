@@ -1,5 +1,6 @@
 #include <string.h>
 #include "world.h"
+#include "block.h"
 
 static int32_t imod(int32_t a, int32_t b)
 {
@@ -71,4 +72,44 @@ Chunk *worldGetChunkAt(World *w, int32_t cx, int32_t cz)
 	if (slot->active && slot->chunk.cx == cx && slot->chunk.cz == cz)
 		return &slot->chunk;
 	return NULL;
+}
+
+int worldIsCollidable(World *w, int32_t x, int32_t y, int32_t z)
+{
+	if (y < 0 || y >= CHUNK_SY)
+		return y < 0; /* solid floor below the world, open sky above it */
+
+	Chunk *c = worldGetChunkAt(w, ifloordiv(x, CHUNK_SX), ifloordiv(z, CHUNK_SZ));
+	if (!c)
+		return 1;
+
+	BlockId b = chunkGet(c, imod(x, CHUNK_SX), y, imod(z, CHUNK_SZ));
+	return blockIsCollidable(b);
+}
+
+BlockId worldGetBlock(World *w, int32_t x, int32_t y, int32_t z)
+{
+	if (y < 0 || y >= CHUNK_SY)
+		return BLOCK_AIR;
+
+	Chunk *c = worldGetChunkAt(w, ifloordiv(x, CHUNK_SX), ifloordiv(z, CHUNK_SZ));
+	if (!c)
+		return BLOCK_AIR;
+
+	return chunkGet(c, imod(x, CHUNK_SX), y, imod(z, CHUNK_SZ));
+}
+
+void worldSetBlock(World *w, int32_t x, int32_t y, int32_t z, BlockId b)
+{
+	if (y < 0 || y >= CHUNK_SY)
+		return;
+
+	int32_t cx = ifloordiv(x, CHUNK_SX);
+	int32_t cz = ifloordiv(z, CHUNK_SZ);
+	WorldSlot *slot = &w->slots[slotIndex(cx, cz)];
+	if (!slot->active || slot->chunk.cx != cx || slot->chunk.cz != cz)
+		return;
+
+	chunkSet(&slot->chunk, imod(x, CHUNK_SX), y, imod(z, CHUNK_SZ), b);
+	meshChunkBuild(&slot->chunk, &slot->mesh);
 }
