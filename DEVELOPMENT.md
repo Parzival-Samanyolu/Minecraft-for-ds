@@ -228,3 +228,59 @@ moves and consumes exactly the items it should. None of that touches
 `hud_nds.c` itself (the actual pixel plotting, `bgInitSub`, the video
 mode) — that's CI-compile-verified only, same caveat as everything
 NDS-specific so far: I still can't see the screen.
+
+# Milestone 5 — crafting
+
+Three recipes (`craft.c`), on purpose kept to the letter of "keep the
+initial list small and extensible":
+
+| input | output |
+|---|---|
+| 1 wood | 4 planks |
+| 2 planks | 4 sticks |
+| 4 planks | 1 crafting table |
+
+Sticks (`ITEM_STICK`) are the first non-placeable item — they reuse the
+same `BlockId`-as-item-id space as everything else (values `>= BLOCK_COUNT`
+just mean "not a real voxel block", see `block.h`) rather than adding a
+parallel item-type system for one entry. The crafting table is placeable
+but doesn't do anything special yet — it's there because "wood -> planks
+-> table" is the traditional first Minecraft recipe chain and it costs
+nothing to include, not because tables gate crafting here (nothing does;
+crafting works anywhere, there's no "must be near a table" rule since
+there's no real reason to add that restriction yet).
+
+**Matching is shapeless and strict**: a recipe fires when every filled
+cell in the 2x2 grid holds the *same* ingredient and the filled count
+exactly equals what the recipe wants (1, 2, or 4 here). No partial
+matches, no arrangement-sensitivity — simpler than real Minecraft's
+shaped recipes, appropriate for a grid this small with only three inputs.
+
+**UI/interaction**: the crafting panel (2x2 grid + output slot + a mode
+toggle button) sits top-right of the touch HUD, away from the inventory
+grid/hotbar and target preview so nothing overlaps (checked for real —
+see below). It's a mode rather than a separate screen: tapping the
+toggle flips `craftMode`; while it's on, tapping a hotbar/inventory slot
+moves one item from that stack into the crafting grid instead of
+selecting/swapping, tapping a filled grid cell returns its item to the
+inventory, and tapping the output slot (which previews the matching
+recipe's result, if any) collects it and clears the grid. This is
+simpler than Minecraft's own click-to-hold-drag-to-place interaction —
+no cursor-holds-an-item state — chosen because two-tap-per-action is
+easy to get right on a touchscreen without a stylus-drag threshold to
+tune, and there's nothing here to visually test to confirm a fancier
+interaction actually feels good.
+
+**Testing**: `craft.c` is fully host-tested — each of the three recipes
+end to end (place ingredients, match, collect, verify the right output
+lands in inventory), a mismatched-ingredients case confirmed to *not*
+match, and `craftReturnCell` confirmed to hand the item back rather than
+lose it. `hud_layout.c`'s region table (all 32 inventory slots + 4 craft
+cells + the output slot + the toggle, 38 regions total) is checked the
+same way milestone 4's was: every region on-screen, every region's center
+hit-tests back to itself with the right kind *and* index, and no two
+regions overlap — confirming the hand-picked craft-panel coordinates
+actually land clear of the inventory grid, hotbar, and target preview
+before ever reaching a device to find out the hard way. As always, the
+pixel output itself (`hud_nds.c`'s new craft-panel drawing) is
+CI-compile-verified only.

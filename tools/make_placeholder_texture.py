@@ -93,6 +93,36 @@ def tile_coal_ore():
     return px
 
 
+def tile_planks():
+    px = tile_speckle((22, 16, 9), 1, 11)
+    for y in range(SIZE):
+        if y % 4 == 0:
+            for x in range(SIZE):
+                r, g, b = speckle((15, 10, 5), 1, 11, x, y)
+                px[y][x] = rgb15(r, g, b)
+    return px
+
+
+def tile_crafting_table():
+    px = tile_speckle((18, 13, 7), 1, 12)
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if x == 0 or y == 0 or x == SIZE - 1 or y == SIZE - 1 or x == 8 or y == 8:
+                r, g, b = speckle((10, 6, 3), 1, 12, x, y)
+                px[y][x] = rgb15(r, g, b)
+    return px
+
+
+def tile_stick():
+    px = [[rgb15(0, 0, 0) for _ in range(SIZE)] for _ in range(SIZE)]
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if abs((x - y)) <= 1 and 2 <= x + y <= 26:
+                r, g, b = speckle((17, 12, 6), 1, 13, x, y)
+                px[y][x] = rgb15(r, g, b)
+    return px
+
+
 TEXTURES = [
     tile_grass_top(),
     tile_grass_side(),
@@ -104,6 +134,9 @@ TEXTURES = [
     tile_wood_top(),
     tile_leaves(),
     tile_coal_ore(),
+    tile_planks(),
+    tile_crafting_table(),
+    tile_stick(),
 ]
 
 with open("data/texture.bin", "wb") as f:

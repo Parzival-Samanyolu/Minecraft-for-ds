@@ -16,6 +16,7 @@
 #include "raycast.h"
 #include "inventory.h"
 #include "hud_layout.h"
+#include "craft.h"
 
 /* mirrors emitQuadVerts()'s corner math in source/render_nds.c -- checked
  * here too since v16 (the NDS's vertex fixed-point format) only holds
@@ -219,19 +220,44 @@ int main(void)
 		fail = 1;
 	}
 
-	printf("\n=== HUD layout: slot hit-testing and non-overlap ===\n");
+	printf("\n=== HUD layout: hit-testing and non-overlap across all regions ===\n");
 	int layoutOk = 1;
-	for (int i = 0; i < INV_TOTAL_SLOTS; i++) {
-		HudRect r = hudSlotPosition(i);
+#define HUD_REGION_COUNT (INV_TOTAL_SLOTS + CRAFT_GRID_SIZE + 2)
+	HudRect regionRect[HUD_REGION_COUNT];
+	HudHitKind regionKind[HUD_REGION_COUNT];
+	int regionIndex[HUD_REGION_COUNT];
+	int n = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++, n++) {
+		regionRect[n] = hudSlotPosition(i);
+		regionKind[n] = HUD_HIT_INV_SLOT;
+		regionIndex[n] = i;
+	}
+	for (int i = 0; i < CRAFT_GRID_SIZE; i++, n++) {
+		regionRect[n] = hudCraftCellPosition(i);
+		regionKind[n] = HUD_HIT_CRAFT_CELL;
+		regionIndex[n] = i;
+	}
+	regionRect[n] = hudCraftOutputPosition();
+	regionKind[n] = HUD_HIT_CRAFT_OUTPUT;
+	regionIndex[n] = 0;
+	n++;
+	regionRect[n] = hudCraftTogglePosition();
+	regionKind[n] = HUD_HIT_CRAFT_TOGGLE;
+	regionIndex[n] = 0;
+	n++;
+
+	for (int i = 0; i < n; i++) {
+		HudRect r = regionRect[i];
 		if (r.x < 0 || r.y < 0 || r.x + HUD_SLOT_SIZE > 256 || r.y + HUD_SLOT_SIZE > 192)
 			layoutOk = 0;
-		if (hudSlotAtPoint(r.x + HUD_SLOT_SIZE / 2, r.y + HUD_SLOT_SIZE / 2) != i)
+		HudHit h = hudHitTest(r.x + HUD_SLOT_SIZE / 2, r.y + HUD_SLOT_SIZE / 2);
+		if (h.kind != regionKind[i] || h.index != regionIndex[i])
 			layoutOk = 0;
 	}
-	for (int i = 0; i < INV_TOTAL_SLOTS && layoutOk; i++) {
-		HudRect a = hudSlotPosition(i);
-		for (int j = i + 1; j < INV_TOTAL_SLOTS; j++) {
-			HudRect b = hudSlotPosition(j);
+	for (int i = 0; i < n && layoutOk; i++) {
+		HudRect a = regionRect[i];
+		for (int j = i + 1; j < n; j++) {
+			HudRect b = regionRect[j];
 			int overlapX = a.x < b.x + HUD_SLOT_SIZE && b.x < a.x + HUD_SLOT_SIZE;
 			int overlapY = a.y < b.y + HUD_SLOT_SIZE && b.y < a.y + HUD_SLOT_SIZE;
 			if (overlapX && overlapY) {
@@ -240,12 +266,103 @@ int main(void)
 			}
 		}
 	}
-	if (hudSlotAtPoint(HUD_TARGET_X + HUD_SLOT_SIZE / 2, HUD_TARGET_Y + HUD_SLOT_SIZE / 2) != -1)
-		layoutOk = 0; /* target preview box should not double as a real inventory slot */
-	printf("%d slots checked (on-screen, centers hit-test to themselves, no overlaps): %s\n",
-	       INV_TOTAL_SLOTS, layoutOk ? "OK" : "FAIL");
+	HudHit targetHit = hudHitTest(HUD_TARGET_X + HUD_SLOT_SIZE / 2, HUD_TARGET_Y + HUD_SLOT_SIZE / 2);
+	if (targetHit.kind != HUD_HIT_NONE)
+		layoutOk = 0; /* target preview box should not double as a real slot */
+	printf("%d regions checked (on-screen, centers hit-test correctly, no overlaps): %s\n",
+	       n, layoutOk ? "OK" : "FAIL");
 	if (!layoutOk)
 		fail = 1;
+
+	printf("\n=== crafting: wood -> planks -> sticks / table ===\n");
+	Inventory cinv;
+	inventoryInit(&cinv);
+	inventoryAddItem(&cinv, BLOCK_WOOD, 1);
+	inventoryAddItem(&cinv, BLOCK_STONE, 1);
+
+	CraftGrid grid;
+	craftGridInit(&grid);
+	craftPlaceFromInventory(&grid, &cinv, 0); /* 1 wood -> grid */
+	int r1 = craftMatch(&grid);
+	int collected1 = craftCollect(&grid, &cinv);
+	int planksAfter1 = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_PLANKS)
+			planksAfter1 += cinv.slots[i].count;
+	printf("1 wood: recipe=%d collected=%d planks_in_inv=%d\n", r1, collected1, planksAfter1);
+	if (r1 != 0 || !collected1 || planksAfter1 != 4) {
+		printf("FAIL: wood -> planks recipe didn't fire as expected\n");
+		fail = 1;
+	}
+
+	craftGridInit(&grid);
+	int planksSlot = -1;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_PLANKS) { planksSlot = i; break; }
+	craftPlaceFromInventory(&grid, &cinv, planksSlot);
+	craftPlaceFromInventory(&grid, &cinv, planksSlot);
+	int r2 = craftMatch(&grid);
+	int collected2 = craftCollect(&grid, &cinv);
+	int sticks = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == ITEM_STICK)
+			sticks += cinv.slots[i].count;
+	printf("2 planks: recipe=%d collected=%d sticks_in_inv=%d\n", r2, collected2, sticks);
+	if (r2 != 1 || !collected2 || sticks != 4) {
+		printf("FAIL: planks -> sticks recipe didn't fire as expected\n");
+		fail = 1;
+	}
+
+	craftGridInit(&grid);
+	inventoryAddItem(&cinv, BLOCK_PLANKS, 4);
+	planksSlot = -1;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_PLANKS && cinv.slots[i].count >= 4) { planksSlot = i; break; }
+	for (int i = 0; i < 4; i++)
+		craftPlaceFromInventory(&grid, &cinv, planksSlot);
+	int r3 = craftMatch(&grid);
+	int collected3 = craftCollect(&grid, &cinv);
+	int tables = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_CRAFTING_TABLE)
+			tables += cinv.slots[i].count;
+	printf("4 planks: recipe=%d collected=%d tables_in_inv=%d\n", r3, collected3, tables);
+	if (r3 != 2 || !collected3 || tables != 1) {
+		printf("FAIL: planks -> crafting table recipe didn't fire as expected\n");
+		fail = 1;
+	}
+
+	craftGridInit(&grid);
+	int stoneSlot = -1;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_STONE) { stoneSlot = i; break; }
+	craftPlaceFromInventory(&grid, &cinv, stoneSlot);
+	planksSlot = -1;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_PLANKS) { planksSlot = i; break; }
+	if (planksSlot >= 0)
+		craftPlaceFromInventory(&grid, &cinv, planksSlot);
+	int rMismatch = craftMatch(&grid);
+	printf("stone+planks mismatch: recipe=%d (expect -1)\n", rMismatch);
+	if (rMismatch != -1) {
+		printf("FAIL: mixed ingredients shouldn't match any recipe\n");
+		fail = 1;
+	}
+	int stoneBeforeReturn = 0;
+	for (int i = 0; i < CRAFT_GRID_SIZE; i++)
+		if (grid.cells[i].id == BLOCK_STONE)
+			stoneBeforeReturn = 1;
+	craftReturnCell(&grid, &cinv, 0);
+	int stoneBackInInv = 0;
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (cinv.slots[i].id == BLOCK_STONE)
+			stoneBackInInv += cinv.slots[i].count;
+	printf("returned cell 0: had_stone=%d stone_back_in_inv=%d grid[0].count=%d\n",
+	       stoneBeforeReturn, stoneBackInInv, grid.cells[0].count);
+	if (grid.cells[0].count != 0 || stoneBackInInv != 1) {
+		printf("FAIL: craftReturnCell didn't give the item back\n");
+		fail = 1;
+	}
 
 	printf("\n=== streaming as the camera walks across chunk borders ===\n");
 	int32_t walk[][2] = { { 16, 0 }, { 32, 0 }, { 200, 0 }, { 200, 16 }, { 200, 200 } };

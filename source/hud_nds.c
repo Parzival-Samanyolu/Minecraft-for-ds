@@ -49,7 +49,8 @@ static void drawSlotFrame(int x, int y, int highlighted)
 	fillRect(x + 1, y + 1, HUD_SLOT_SIZE - 2, HUD_SLOT_SIZE - 2, inner);
 }
 
-void hudRender(const Inventory *inv, int hasTarget, BlockId targetBlock)
+void hudRender(const Inventory *inv, const CraftGrid *grid, int craftMode,
+                int hasTarget, BlockId targetBlock)
 {
 	for (int i = 0; i < INV_TOTAL_SLOTS; i++) {
 		HudRect r = hudSlotPosition(i);
@@ -62,4 +63,23 @@ void hudRender(const Inventory *inv, int hasTarget, BlockId targetBlock)
 	drawSlotFrame(HUD_TARGET_X, HUD_TARGET_Y, 0);
 	if (hasTarget && targetBlock != BLOCK_AIR)
 		blitIcon(HUD_TARGET_X + 2, HUD_TARGET_Y + 2, blockFaceTexture(targetBlock, 1, 1));
+
+	for (int i = 0; i < CRAFT_GRID_SIZE; i++) {
+		HudRect r = hudCraftCellPosition(i);
+		drawSlotFrame(r.x, r.y, 0);
+		if (grid->cells[i].count != 0)
+			blitIcon(r.x + 2, r.y + 2, blockFaceTexture(grid->cells[i].id, 1, 1));
+	}
+
+	HudRect out = hudCraftOutputPosition();
+	drawSlotFrame(out.x, out.y, 0);
+	int recipe = craftMatch(grid);
+	if (recipe >= 0)
+		blitIcon(out.x + 2, out.y + 2, blockFaceTexture(CRAFT_RECIPES[recipe].output, 1, 1));
+
+	HudRect toggle = hudCraftTogglePosition();
+	u16 toggleColor = craftMode ? ARGB16(1, 8, 28, 8) : ARGB16(1, 12, 12, 14);
+	fillRect(toggle.x, toggle.y, HUD_SLOT_SIZE, HUD_SLOT_SIZE, toggleColor);
+	fillRect(toggle.x + 3, toggle.y + 3, HUD_SLOT_SIZE - 6, HUD_SLOT_SIZE - 6,
+	         craftMode ? ARGB16(1, 16, 31, 16) : ARGB16(1, 18, 18, 20));
 }

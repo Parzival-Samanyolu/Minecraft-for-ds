@@ -15,8 +15,21 @@ enum {
 	BLOCK_WOOD,
 	BLOCK_LEAVES,
 	BLOCK_COAL_ORE,
-	BLOCK_COUNT
+	BLOCK_PLANKS,
+	BLOCK_CRAFTING_TABLE,
+	BLOCK_COUNT,     /* ids below this are real, placeable voxel blocks */
+
+	/* crafting-only items from here on -- never placed in the world, so
+	 * they only need an inventory icon, not mesh faces. reusing BlockId
+	 * as the one item-id space avoids a parallel enum/type just for this */
+	ITEM_STICK = BLOCK_COUNT,
+	ITEM_COUNT
 };
+
+static inline int blockIsPlaceable(BlockId b)
+{
+	return b > BLOCK_AIR && b < BLOCK_COUNT;
+}
 
 /* indices into the texture blob -- keep in sync with
  * tools/make_placeholder_texture.py and the real atlas whenever that
@@ -32,6 +45,9 @@ enum {
 	TEX_WOOD_TOP,
 	TEX_LEAVES,
 	TEX_COAL_ORE,
+	TEX_PLANKS,
+	TEX_CRAFTING_TABLE,
+	TEX_STICK,       /* icon-only, never used as a mesh face */
 	TEX_COUNT
 };
 
@@ -78,6 +94,12 @@ static inline uint8_t blockFaceTexture(BlockId b, int axis, int dir)
 		return TEX_LEAVES;
 	case BLOCK_COAL_ORE:
 		return TEX_COAL_ORE;
+	case BLOCK_PLANKS:
+		return TEX_PLANKS;
+	case BLOCK_CRAFTING_TABLE:
+		return TEX_CRAFTING_TABLE;
+	case ITEM_STICK:
+		return TEX_STICK; /* not a real face, just what the inventory icon looks up */
 	default:
 		return TEX_STONE;
 	}

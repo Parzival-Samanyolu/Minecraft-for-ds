@@ -6,6 +6,7 @@
 #include "raycast.h"
 #include "render_nds.h"
 #include "inventory.h"
+#include "craft.h"
 #include "hud_layout.h"
 #include "hud_nds.h"
 
@@ -60,6 +61,10 @@ int main(void)
 	Inventory inv;
 	inventoryInit(&inv);
 
+	CraftGrid grid;
+	craftGridInit(&grid);
+	int craftMode = 0;
+
 	while (pmMainLoop())
 	{
 		scanKeys();
@@ -107,11 +112,29 @@ int main(void)
 		if (down & KEY_TOUCH) {
 			touchPosition touch;
 			touchRead(&touch);
-			int slot = hudSlotAtPoint(touch.px, touch.py);
-			if (slot >= 0 && slot < INV_HOTBAR_SLOTS)
-				inv.selectedHotbar = slot;
-			else if (slot >= 0)
-				inventorySwap(&inv, inv.selectedHotbar, slot);
+			HudHit hit = hudHitTest(touch.px, touch.py);
+
+			switch (hit.kind) {
+			case HUD_HIT_INV_SLOT:
+				if (craftMode)
+					craftPlaceFromInventory(&grid, &inv, hit.index);
+				else if (hit.index < INV_HOTBAR_SLOTS)
+					inv.selectedHotbar = hit.index;
+				else
+					inventorySwap(&inv, inv.selectedHotbar, hit.index);
+				break;
+			case HUD_HIT_CRAFT_CELL:
+				craftReturnCell(&grid, &inv, hit.index);
+				break;
+			case HUD_HIT_CRAFT_OUTPUT:
+				craftCollect(&grid, &inv);
+				break;
+			case HUD_HIT_CRAFT_TOGGLE:
+				craftMode = !craftMode;
+				break;
+			default:
+				break;
+			}
 		}
 
 		glMatrixMode(GL_MODELVIEW);
@@ -123,7 +146,8 @@ int main(void)
 		renderWorld(&world);
 		glFlush(0);
 
-		hudRender(&inv, target.hit, target.hit ? worldGetBlock(&world, target.bx, target.by, target.bz) : BLOCK_AIR);
+		hudRender(&inv, &grid, craftMode, target.hit,
+		          target.hit ? worldGetBlock(&world, target.bx, target.by, target.bz) : BLOCK_AIR);
 
 		swiWaitForVBlank();
 

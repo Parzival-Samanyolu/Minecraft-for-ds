@@ -21,12 +21,58 @@ HudRect hudSlotPosition(int slotIndex)
 	return r;
 }
 
-int hudSlotAtPoint(int px, int py)
+HudRect hudCraftCellPosition(int cellIndex)
 {
-	for (int i = 0; i < INV_TOTAL_SLOTS; i++) {
-		HudRect r = hudSlotPosition(i);
-		if (px >= r.x && px < r.x + HUD_SLOT_SIZE && py >= r.y && py < r.y + HUD_SLOT_SIZE)
-			return i;
+	HudRect r;
+	int row = cellIndex / HUD_CRAFT_COLS;
+	int col = cellIndex % HUD_CRAFT_COLS;
+	r.x = HUD_CRAFT_X + col * HUD_SLOT_SIZE;
+	r.y = HUD_CRAFT_Y + row * HUD_SLOT_SIZE;
+	return r;
+}
+
+HudRect hudCraftOutputPosition(void)
+{
+	HudRect r = { HUD_CRAFT_OUTPUT_X, HUD_CRAFT_OUTPUT_Y };
+	return r;
+}
+
+HudRect hudCraftTogglePosition(void)
+{
+	HudRect r = { HUD_CRAFT_TOGGLE_X, HUD_CRAFT_TOGGLE_Y };
+	return r;
+}
+
+static int inRect(int px, int py, HudRect r)
+{
+	return px >= r.x && px < r.x + HUD_SLOT_SIZE && py >= r.y && py < r.y + HUD_SLOT_SIZE;
+}
+
+HudHit hudHitTest(int px, int py)
+{
+	HudHit miss = { HUD_HIT_NONE, 0 };
+
+	for (int i = 0; i < INV_TOTAL_SLOTS; i++)
+		if (inRect(px, py, hudSlotPosition(i))) {
+			HudHit h = { HUD_HIT_INV_SLOT, i };
+			return h;
+		}
+
+	for (int i = 0; i < CRAFT_GRID_SIZE; i++)
+		if (inRect(px, py, hudCraftCellPosition(i))) {
+			HudHit h = { HUD_HIT_CRAFT_CELL, i };
+			return h;
+		}
+
+	if (inRect(px, py, hudCraftOutputPosition())) {
+		HudHit h = { HUD_HIT_CRAFT_OUTPUT, 0 };
+		return h;
 	}
-	return -1;
+
+	if (inRect(px, py, hudCraftTogglePosition())) {
+		HudHit h = { HUD_HIT_CRAFT_TOGGLE, 0 };
+		return h;
+	}
+
+	return miss;
 }
