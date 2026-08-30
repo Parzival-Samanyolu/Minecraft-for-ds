@@ -11,6 +11,6 @@
 #define BLOCK_UNIT 0.2f
 
 void renderInit(void);
-void renderWorld(World *w);
+void renderWorld(World *w, float lightMul);
 
 #endif

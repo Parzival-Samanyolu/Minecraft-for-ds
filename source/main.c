@@ -9,6 +9,7 @@
 #include "craft.h"
 #include "hud_layout.h"
 #include "hud_nds.h"
+#include "daynight.h"
 
 #define DEG2RAD 0.0174532925f
 #define TURN_SPEED 2.2f    /* degrees/frame */
@@ -32,7 +33,6 @@ static void initGraphics(void)
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_ANTIALIAS);
 
-	glClearColor(10, 14, 20, 31);
 	glClearPolyID(63);
 	glClearDepth(GL_MAX_DEPTH);
 	glViewport(0, 0, 255, 191);
@@ -64,6 +64,9 @@ int main(void)
 	CraftGrid grid;
 	craftGridInit(&grid);
 	int craftMode = 0;
+
+	DayNight dn;
+	dayNightInit(&dn);
 
 	while (pmMainLoop())
 	{
@@ -137,13 +140,18 @@ int main(void)
 			}
 		}
 
+		dayNightStep(&dn, DT);
+		int skyR, skyG, skyB;
+		dayNightSkyColor(&dn, &skyR, &skyG, &skyB);
+		glClearColor(skyR, skyG, skyB, 31);
+
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		gluLookAt(eyeX * BLOCK_UNIT, eyeY * BLOCK_UNIT, eyeZ * BLOCK_UNIT,
 		          (eyeX + fx) * BLOCK_UNIT, (eyeY + fy) * BLOCK_UNIT, (eyeZ + fz) * BLOCK_UNIT,
 		          0.0, 1.0, 0.0);
 
-		renderWorld(&world);
+		renderWorld(&world, dayNightLightLevel(&dn));
 		glFlush(0);
 
 		hudRender(&inv, &grid, craftMode, target.hit,

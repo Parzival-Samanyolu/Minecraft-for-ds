@@ -284,3 +284,45 @@ actually land clear of the inventory grid, hotbar, and target preview
 before ever reaching a device to find out the hard way. As always, the
 pixel output itself (`hud_nds.c`'s new craft-panel drawing) is
 CI-compile-verified only.
+
+# Milestone 6 — day/night cycle and lighting
+
+`daynight.c` is a single float (seconds into the current day) with
+functions mapping it to a sky color, a global 0..1 brightness multiplier,
+and a day/night boolean mob spawning will read once mobs exist. No
+libnds dependency, host-tested for the things that would otherwise only
+show up by staring at a screen: light level and sky color actually get
+darker going into night and lighter coming out (not just "different"),
+the transitions are continuous (no snapping — checked by sampling 2000
+steps across a full cycle and asserting no single step jumps more than a
+small epsilon), and time wraps around correctly instead of `t` growing
+without bound.
+
+**Day length is 4 minutes, not Minecraft's 20.** Nothing about the
+implementation cares about the exact number — `DAY_LENGTH_SECONDS` is one
+constant — but 20 minutes means nobody testing this on a handheld or in
+Delta would ever see it change during a normal play session. Also unlike
+Minecraft: day and night aren't equal length. Day is 90% of the cycle
+(`DAYNIGHT_SUNSET_START = 0.4` to `DAYNIGHT_NIGHT_START = 0.5` is the only
+transition window before night, `DAYNIGHT_SUNRISE_START = 0.9` back to
+day) — night is intentionally short, since mobs (next milestone) will
+spawn during it and a long fumble-in-the-dark stretch isn't worth it yet
+without mob AI to make that time interesting.
+
+**Lighting is a global multiplier, not per-block light propagation.**
+Real Minecraft tracks a light value per block and propagates it from sky
+and light sources through the world — meaningfully more compute and
+memory than this project's per-chunk mesh cache currently accounts for,
+and there are no light-emitting blocks yet to make that investment pay
+off. Instead, `render_nds.c`'s `renderWorld()` now takes a `lightMul`
+that multiplies into every face's existing fixed shade (the
+top/bottom/side brightness values from milestone 2) — cheap, and the
+result is still every face getting relatively darker at night, just not
+with real shadows or point lights. Night floor is 0.35, not 0, so terrain
+stays legible rather than going to a black screen.
+
+**Not verified from this sandbox**: whether the sky color and lighting
+actually read as "day" and "night" to a human looking at the screen —
+the RGB values and the 0.35 floor are judgment calls made without being
+able to see them rendered. Same standing caveat as every NDS-visual
+choice so far.

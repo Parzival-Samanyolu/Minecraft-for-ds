@@ -29,13 +29,13 @@ static float faceShade(int axis, int dir)
 	return 0.6f;
 }
 
-static void emitQuadVerts(const MeshQuad *q)
+static void emitQuadVerts(const MeshQuad *q, float lightMul)
 {
 	int axis = q->axis;
 	int u = (axis + 1) % 3;
 	int v = (axis + 2) % 3;
 	int base[3] = { q->x, q->y, q->z };
-	float shade = faceShade(axis, q->dir);
+	float shade = faceShade(axis, q->dir) * lightMul;
 
 	glColor3f(shade, shade, shade);
 
@@ -53,7 +53,7 @@ static void emitQuadVerts(const MeshQuad *q)
 	}
 }
 
-void renderWorld(World *w)
+void renderWorld(World *w, float lightMul)
 {
 	for (int i = 0; i < WORLD_GRID_SLOTS; i++) {
 		WorldSlot *slot = &w->slots[i];
@@ -79,7 +79,7 @@ void renderWorld(World *w)
 			glBegin(GL_QUADS);
 			for (int qi = 0; qi < slot->mesh.count; qi++) {
 				if (slot->mesh.quads[qi].tex == t)
-					emitQuadVerts(&slot->mesh.quads[qi]);
+					emitQuadVerts(&slot->mesh.quads[qi], lightMul);
 			}
 			glEnd();
 		}

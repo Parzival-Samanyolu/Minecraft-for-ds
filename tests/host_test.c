@@ -17,6 +17,7 @@
 #include "inventory.h"
 #include "hud_layout.h"
 #include "craft.h"
+#include "daynight.h"
 
 /* mirrors emitQuadVerts()'s corner math in source/render_nds.c -- checked
  * here too since v16 (the NDS's vertex fixed-point format) only holds
@@ -363,6 +364,59 @@ int main(void)
 		printf("FAIL: craftReturnCell didn't give the item back\n");
 		fail = 1;
 	}
+
+	printf("\n=== day/night cycle ===\n");
+	DayNight dn;
+	dayNightInit(&dn);
+	int dayR, dayG, dayB, nightR, nightG, nightB;
+	dayNightSkyColor(&dn, &dayR, &dayG, &dayB);
+	float noonLight = dayNightLightLevel(&dn);
+	int noonIsNight = dayNightIsNight(&dn);
+	printf("t=0 (noon-ish): light=%.2f isNight=%d sky=(%d,%d,%d)\n", noonLight, noonIsNight, dayR, dayG, dayB);
+	if (noonIsNight || noonLight < 0.99f) {
+		printf("FAIL: start of day should be full daylight\n");
+		fail = 1;
+	}
+
+	dayNightStep(&dn, DAY_LENGTH_SECONDS * 0.7f); /* deep into the night phase */
+	float nightLight = dayNightLightLevel(&dn);
+	int deepIsNight = dayNightIsNight(&dn);
+	dayNightSkyColor(&dn, &nightR, &nightG, &nightB);
+	printf("t=0.7 (night): light=%.2f isNight=%d sky=(%d,%d,%d)\n", nightLight, deepIsNight, nightR, nightG, nightB);
+	if (!deepIsNight || nightLight > 0.36f || nightLight >= noonLight) {
+		printf("FAIL: 70%% through the day should be dark night\n");
+		fail = 1;
+	}
+	if (nightR >= dayR && nightG >= dayG && nightB >= dayB) {
+		printf("FAIL: night sky should be darker than day sky\n");
+		fail = 1;
+	}
+
+	/* wrap-around: stepping past DAY_LENGTH_SECONDS should land back in
+	 * daylight, not accumulate an ever-growing t */
+	dayNightInit(&dn);
+	dayNightStep(&dn, DAY_LENGTH_SECONDS * 1.5f);
+	float wrapped = dayNightFraction(&dn);
+	printf("stepped 1.5 days from t=0: fraction=%.3f (expect ~0.5)\n", wrapped);
+	if (wrapped < 0.49f || wrapped > 0.51f) {
+		printf("FAIL: day fraction didn't wrap around correctly\n");
+		fail = 1;
+	}
+
+	/* continuity: no sudden jump in light level crossing a phase boundary */
+	dayNightInit(&dn);
+	float prevLight = dayNightLightLevel(&dn);
+	int continuityOk = 1;
+	for (int i = 1; i <= 2000; i++) {
+		dayNightStep(&dn, DAY_LENGTH_SECONDS / 2000.0f);
+		float l = dayNightLightLevel(&dn);
+		if (fabsf(l - prevLight) > 0.05f)
+			continuityOk = 0;
+		prevLight = l;
+	}
+	printf("light level continuity over a full day: %s\n", continuityOk ? "OK" : "FAIL");
+	if (!continuityOk)
+		fail = 1;
 
 	printf("\n=== streaming as the camera walks across chunk borders ===\n");
 	int32_t walk[][2] = { { 16, 0 }, { 32, 0 }, { 200, 0 }, { 200, 16 }, { 200, 200 } };
