@@ -8,7 +8,7 @@ on:
 jobs:
   nds-rom:
     runs-on: ubuntu-latest
-    container: devkitpro/devkitarm:latest
+    container: skylyrac/blocksds:slim-latest
     steps:
       - uses: actions/checkout@v4
 
