@@ -52,7 +52,11 @@ int main(void)
 {
 	initGraphics();
 
-	World world;
+	/* World is ~100 KB (9 chunks + meshes). The ARM9 stack lives in the
+	 * 16 KB DTCM, so as a local it overflowed the stack on entry to main()
+	 * and the ROM died before video init -- a white screen on both
+	 * displays. static puts it in .bss (main RAM) instead. */
+	static World world;
 	worldInit(&world, 1337);
 
 	Player pl;
