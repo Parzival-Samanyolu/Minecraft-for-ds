@@ -1,7 +1,7 @@
 # Minecraft-for-ds
 
 A cut-down Minecraft-style voxel sandbox for real Nintendo DS hardware
-(devkitARM/libnds), scoped to the DS's actual budget: ARM9 @ 67MHz, 4MB RAM,
+(BlocksDS/libnds), scoped to the DS's actual budget: ARM9 @ 67MHz, 4MB RAM,
 ~656KB VRAM, fixed-function GPU. No redstone, no pathfinding, no
 multiplayer.
 

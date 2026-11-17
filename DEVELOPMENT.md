@@ -1,8 +1,7 @@
 # Building
 
-Standard devkitPro/libnds project. Needs `devkitARM` and `libnds` from the
-devkitPro pacman repo (`sudo dkp-pacman -S nds-dev`), with `DEVKITARM` set
-in your environment, then:
+BlocksDS project (https://blocksds.skylyrac.net). With BlocksDS installed
+(or inside the `skylyrac/blocksds:slim-latest` Docker image):
 
 ```
 make
@@ -10,16 +9,20 @@ make
 
 produces `minecraft-for-ds.nds`. `make clean` to reset.
 
-CI builds the ROM on every push via `.github/workflows/build.yml` using the
-`devkitpro/devkitarm` Docker image and uploads it as a workflow artifact.
+CI builds the ROM on every push via `.github/workflows/build.yml` using that
+Docker image and uploads it as a workflow artifact.
 
-Toolchain note: this was written in a sandbox with no ARM cross toolchain
-and no route to the devkitPro package mirror, so nothing here has been
-compiled locally — it's been checked against the actual libnds headers/
-examples on GitHub and validated through the CI build above instead. Actual
-hardware and Delta behavior (input mapping, save handling, real framerate)
-still need a real device/emulator, which is outside what this environment
-can do — that testing is on you.
+Toolchain note: this originally built with devkitARM/libnds 2.x. That ROM
+only ever showed two white screens in Delta, and in DeSmuME both CPUs hang
+in the toolchain's own startup handshake before `main()` is reached, so it
+was moved to BlocksDS, whose ROMs boot in DeSmuME and older melonDS cores.
+The BlocksDS build has been run in DeSmuME (terrain on the top screen, HUD
+on the bottom). Real-hardware and Delta behavior (input feel, framerate)
+still need checking on a device.
+
+One more thing that bit the first builds: `World` is ~100 KB and must not
+be a stack local -- the ARM9 stack is only 16 KB. It is `static` in
+`main()` for that reason.
 
 # Texture assets
 
