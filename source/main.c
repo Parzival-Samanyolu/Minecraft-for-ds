@@ -76,7 +76,7 @@ int main(void)
 	MobWorld mobs;
 	mobWorldInit(&mobs, 2024);
 
-	while (pmMainLoop())
+	while (1)
 	{
 		scanKeys();
 		u16 held = keysHeld();
